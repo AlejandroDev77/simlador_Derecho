@@ -1,17 +1,18 @@
 # simlador_Derecho
 
-Starter de React + FastAPI para el simulador de Derecho.
+Starter de React + FastAPI para el simulador de Derecho, separado en `frontend/` y `backend/`.
 
-Frontend starter con React, TypeScript, Vite y Tailwind CSS. La capa HTTP y los servicios viven en `src/services`.
+El frontend usa React, TypeScript, Vite y Tailwind CSS. La capa HTTP y los servicios viven en `frontend/src/services`.
 
 ## Empezar
 
 ```bash
+cd frontend
 npm install
 npm run dev
 ```
 
-En otra terminal, levanta el backend:
+En otra terminal, levanta el backend desde la raíz del repositorio:
 
 ```bash
 cd backend
@@ -24,12 +25,12 @@ fastapi dev main.py
 
 La documentación interactiva de la API queda disponible en `http://localhost:8000/docs`.
 
-Configura la dirección de FastAPI en `.env` (puedes copiar `.env.example`):
+Configura la dirección de FastAPI en `frontend/.env` (puedes copiar `frontend/.env.example`):
 
 ```env
 VITE_API_BASE_URL=http://localhost:8000
 ```
 
-El botón de la página consulta `GET /health`. Para añadir llamadas, usa `apiClient` desde un servicio de dominio en `src/services`.
+El botón de la página consulta `GET /health`. Para añadir llamadas, usa `apiClient` desde un servicio de dominio en `frontend/src/services`.
 
 El backend incluye `CORSMiddleware` para los orígenes locales de Vite (`localhost` y `127.0.0.1` en el puerto `5173`). Actualiza esa lista si cambias el host o puerto del frontend.

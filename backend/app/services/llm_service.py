@@ -1,5 +1,6 @@
 import json
 import re
+import uuid
 from typing import List, Dict, Any, Tuple, Optional
 from openai import OpenAI
 from app.core.config import settings
@@ -184,65 +185,99 @@ class LLMService:
     ) -> Dict[str, Any]:
         """
         Genera la siguiente intervención teatralizada en la sala de audiencias,
-        asegurando coherencia con los hechos y proponiendo opciones si es el turno del usuario.
+        asegurando coherencia con los hechos y proponiendo opciones reactivas y únicas para el usuario.
         """
+        facts_summary = "\n".join([f"- [Hecho #{i+1}]: {f.description}" for i, f in enumerate(case_analysis.facts[:6])])
+        evidences_summary = "\n".join([f"- [Prueba]: {e.name} ({getattr(e.evidence_type, 'value', e.evidence_type)}): {e.description}" for e in case_analysis.evidences[:5]])
+
+        # Detectar qué fue lo último que dijo el usuario o contraparte para reaccionar directamente
+        last_turn = history[-1] if history else None
+        last_context = f"ÚLTIMA INTERVENCIÓN DE {last_turn.get('speaker_name', 'la parte')}: \"{last_turn.get('text', '')}\"" if last_turn else "Apertura inicial de la sesión."
+
+        role_instruction = ""
+        if active_speaker.role == LegalRole.JUEZ:
+            if stage == ProceduralStage.DELIBERACION_SENTENCIA:
+                role_instruction = (
+                    "DIRECTIVA ESPECÍFICA (JUEZ - DICTADO DE SENTENCIA): Como Magistrado Presidente, pronuncia con máxima solemnidad la SENTENCIA JUDICIAL DEFINITIVA "
+                    "en nombre de la Ley. Expón brevemente los fundamentos de convicción sobre las pruebas practicadas y declara el FALLO judicial explícito "
+                    "(condena o absolución, con penas o indemnizaciones precisas según los autos). Concluye declarando la vista 'VISTA PARA SENTENCIA Y CONCLUIDA LA SESIÓN'. "
+                    "NO solicites más intervenciones a las partes y devuelve 'options_for_user' como lista vacía []."
+                )
+            else:
+                role_instruction = "DIRECTIVA ESPECÍFICA (JUEZ): Habla como Magistrado Presidente del Tribunal. Modera con autoridad solemne y concisión (1 a 2 párrafos). Resuelve incidencias o concede el turno de palabra a las partes."
+        elif active_speaker.role in (LegalRole.ABOGADO_DEMANDANTE, LegalRole.ABOGADO_DEMANDADO, LegalRole.FISCAL):
+            role_instruction = "DIRECTIVA ESPECÍFICA (ABOGADO): Habla con técnica forense y vehemencia dialéctica. Dirígete al centro del plenario, refuta con firmeza el argumento anterior y defiende la teoría del caso de tu parte."
+        elif active_speaker.role in (LegalRole.DEMANDADO, LegalRole.DEMANDANTE, LegalRole.TESTIGO):
+            role_instruction = "DIRECTIVA ESPECÍFICA (PARTE DECLARANTE / ACUSADO): Habla en primera persona desde el estrado. Responde al interrogatorio o imputación con la voz vivencial y verídica de quien declara sobre los hechos de autos."
+
         system_prompt = (
-            "Eres el motor de simulación de juicios orales. Diriges las intervenciones en sala con solemnidad y realismo forense.\n"
+            "Eres el motor de simulación de juicios orales. Diriges el debate procesal con rigor técnico, agilidad forense y dramatismo realista.\n"
             f"EXPEDIENTE: {case_analysis.case_title} ({case_analysis.process_type})\n"
-            f"RESUMEN: {case_analysis.summary}\n"
-            f"ETAPA ACTUAL: {stage.value}\n"
-            f"ROL DEL USUARIO (HUMANO): {user_role.value}\n"
-            f"PERSONAJE QUE INTERVIENE AHORA: {active_speaker.name} (Rol: {active_speaker.role.value})\n\n"
-            "REGLAS E INTERACCIÓN:\n"
-            "1. El personaje que habla debe actuar estrictamente según su rol procesal y los hechos del caso.\n"
-            "2. Sé conciso pero con lenguaje forense formal (máximo 3 párrafos cortos).\n"
-            "3. Si el siguiente en hablar será el USUARIO, provee 3 opciones de decisión procesal (con texto, táctica y nivel de riesgo) para facilitarle actuar, o permitirle responder libremente.\n"
-            "4. Devuelve un JSON estructurado."
+            f"RESUMEN DE AUTOS: {case_analysis.summary}\n\n"
+            f"HECHOS DEL EXPEDIENTE:\n{facts_summary}\n\n"
+            f"PRUEBAS ADMITIDAS EN AUTOS:\n{evidences_summary}\n\n"
+            f"ETAPA PROCESAL ACTUAL: {stage.value}\n"
+            f"ROL DEL USUARIO (ALUMNO): {user_role.value}\n"
+            f"PERSONAJE QUE INTERVIENE AHORA: {active_speaker.name} (Rol: {active_speaker.role.value})\n"
+            f"{role_instruction}\n"
+            f"{last_context}\n\n"
+            "DIRECTIVAS FORENSES Y DE RAMIFICACIÓN:\n"
+            "1. REACTIVIDAD DINÁMICA: Tu intervención verbal DEBE responder DIRECTAMENTE a lo último expresado en la sala (indicado arriba). Si el usuario acaba de responder, la contraparte o el juez deben aludir a sus palabras, refutar su tesis, advertir inconsistencias con los autos o requerir aclaración. ¡La narrativa del juicio debe evolucionar y ramificarse!\n"
+            "2. FIDELIDAD PROCESAL: Cita detalles específicos del expediente (documentos, fechas, testimonios o cuantías de autos).\n"
+            "3. GENERACIÓN OBLIGATORIA DE 3 OPCIONES ESTRATÉGICAS ÚNICAS Y DIFERENTES PARA EL USUARIO (options_for_user):\n"
+            "   - Las opciones NUNCA deben ser genéricas ni repetirse turno tras turno.\n"
+            "   - Cada opción debe redactar un alegato o pregunta concreto que cite elementos del caso para responder al orador actual.\n"
+            "   - Debes ofrecer 3 tácticas bien diferenciadas:\n"
+            "     * Opción 1 (riesgo 'bajo'): Enfoque conservador, adhesión estricta a la prueba documental o ratificación formal.\n"
+            "     * Opción 2 (riesgo 'medio'): Enfoque dialéctico, contrainterrogatorio, debate probatorio o refutación directa.\n"
+            "     * Opción 3 (riesgo 'alto'): Maniobra procesal audaz, tacha/impugnación probatoria, excepción procesal o alegato de máxima presión.\n"
+            "4. Devuelve un JSON estructurado con text, animation_state y options_for_user."
         )
 
         tools = [{
             "type": "function",
             "function": {
                 "name": "emit_dialogue_turn",
-                "description": "Emite el diálogo del personaje y las opciones para el usuario",
+                "description": "Emite el diálogo del personaje y exactamente 3 opciones tácticas personalizadas para el usuario",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "text": {"type": "string", "description": "Intervención o discurso verbal del personaje en la audiencia"},
+                        "text": {"type": "string", "description": "Intervención verbal teatralizada y solemne del personaje en la audiencia"},
                         "animation_state": {"type": "string", "enum": ["speaking", "listening", "idle"]},
                         "options_for_user": {
                             "type": "array",
+                            "description": "Exactamente 3 opciones reactivas y específicas del expediente para el usuario",
                             "items": {
                                 "type": "object",
                                 "properties": {
                                     "id": {"type": "string"},
-                                    "text": {"type": "string"},
-                                    "legal_tactic": {"type": "string"},
+                                    "text": {"type": "string", "description": "Texto del alegato o acción procesal concreta que formularía el usuario"},
+                                    "legal_tactic": {"type": "string", "description": "Nombre de la táctica jurídica aplicada"},
                                     "risk_level": {"type": "string", "enum": ["bajo", "medio", "alto"]}
                                 },
-                                "required": ["id", "text", "risk_level"]
+                                "required": ["id", "text", "legal_tactic", "risk_level"]
                             }
                         }
                     },
-                    "required": ["text", "animation_state"]
+                    "required": ["text", "animation_state", "options_for_user"]
                 }
             }
         }]
 
         messages = [{"role": "system", "content": system_prompt}]
-        for item in history[-6:]:  # Últimos 6 turnos para mantener contexto ágil
+        for item in history[-8:]:  # Últimos 8 turnos para mantener contexto ágil y coherente
             speaker = item.get("speaker_name", "Participante")
             text = item.get("text", "")
             messages.append({"role": "assistant" if not item.get("is_user") else "user", "content": f"{speaker}: {text}"})
 
-        messages.append({"role": "user", "content": f"Genera la intervención de {active_speaker.name} ({active_speaker.role.value}) para la etapa de {stage.value}."})
+        messages.append({"role": "user", "content": f"Genera la intervención de {active_speaker.name} ({active_speaker.role.value}) para la etapa de {stage.value} y las 3 opciones tácticas evolutivas para el usuario."})
 
         response = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
             tools=tools,
             tool_choice={"type": "function", "function": {"name": "emit_dialogue_turn"}},
-            temperature=0.4
+            temperature=0.45
         )
 
         tool_call = response.choices[0].message.tool_calls[0]
@@ -253,27 +288,34 @@ class LLMService:
         clean_text = re.sub(rf"^(?:{re.escape(active_speaker.name)}|{re.escape(active_speaker.role.value)}):\s*", "", raw_text, flags=re.IGNORECASE).strip()
         data["text"] = clean_text or raw_text
 
-        # Garantizar que siempre existan opciones tácticas para el usuario
+        # En la etapa de deliberación y sentencia el juicio termina: no hay más opciones de intervención
+        if stage == ProceduralStage.DELIBERACION_SENTENCIA:
+            data["options_for_user"] = []
+            return data
+
+        # Garantizar que en las etapas activas siempre existan opciones tácticas dinámicas basadas en los hechos
         options = data.get("options_for_user", [])
-        if not options:
+        if not options or len(options) < 2:
+            fact_ref = case_analysis.facts[0].description if case_analysis.facts else "los hechos principales de autos"
+            ev_ref = case_analysis.evidences[0].name if case_analysis.evidences else "la prueba documental"
             options = [
                 {
-                    "id": "opt_ratificar",
-                    "text": "Ratificar las pretensiones de parte con base estricta en las pruebas documentales de autos.",
-                    "legal_tactic": "Fidelidad procesal",
+                    "id": f"opt_{uuid.uuid4().hex[:6]}_cons",
+                    "text": f"Sostener la postura de parte respaldándose estrictamente en {ev_ref} y en la literalidad de autos.",
+                    "legal_tactic": "Sujeción documental estricta",
                     "risk_level": "bajo"
                 },
                 {
-                    "id": "opt_interrogar",
-                    "text": "Solicitar aclaración pericial respecto del estado contable y la provisión de fondos.",
-                    "legal_tactic": "Acreditación pericial",
+                    "id": f"opt_{uuid.uuid4().hex[:6]}_ref",
+                    "text": f"Confrontar directamente a la contraparte respecto de {fact_ref}, solicitando que el tribunal aperciba la contradicción.",
+                    "legal_tactic": "Refutación dialéctica",
                     "risk_level": "medio"
                 },
                 {
-                    "id": "opt_conclusiones",
-                    "text": "Formular alegato de clausura solicitando una resolución ajustada a Derecho.",
-                    "legal_tactic": "Conclusiones definitivas",
-                    "risk_level": "bajo"
+                    "id": f"opt_{uuid.uuid4().hex[:6]}_aud",
+                    "text": f"Impugnar la valoración probatoria de la contraparte y solicitar diligencia final vinculada a {ev_ref}.",
+                    "legal_tactic": "Impugnación procesal",
+                    "risk_level": "alto"
                 }
             ]
             data["options_for_user"] = options
@@ -318,17 +360,28 @@ class LLMService:
         user_role: LegalRole
     ) -> AcademicEvaluation:
         """
-        Genera la evaluación académica y el fallo simulado al concluir el juicio.
+        Genera la evaluación académica y el fallo simulado al concluir el juicio,
+        con fundamentación judicial real y rúbrica pedagógica personalizada.
         """
+        facts_summary = "\n".join([f"- [Hecho #{i+1}]: {f.description}" for i, f in enumerate(case_analysis.facts[:8])])
+        evidences_summary = "\n".join([f"- [Prueba]: {e.name} ({getattr(e.evidence_type, 'value', e.evidence_type)}): {e.description}" for e in case_analysis.evidences[:6]])
+
         system_prompt = (
-            "Eres un tribunal evaluador académico de Derecho. Evalúa el desempeño del alumno en la simulación judicial.\n"
-            f"CASO: {case_analysis.case_title}\n"
-            f"ROL DEL ALUMNO: {user_role.value}\n"
-            "Califica objetivamente de 0 a 100:\n"
-            "- Coherencia argumentativa\n"
-            "- Fidelidad a los hechos y ausencia de invenciones\n"
-            "- Uso estratégico y procesal de las pruebas disponibles\n"
-            "Emite una resolución judicial simulada y retroalimentación constructiva."
+            "Eres un tribunal evaluador académico de Derecho y Magistratura. Tu labor es emitir la SENTENCIA JUDICIAL DEFINITIVA y una EVALUACIÓN TÉCNICA PEDAGÓGICA REAL sobre el desempeño procesal del alumno.\n"
+            f"EXPEDIENTE: {case_analysis.case_title} ({case_analysis.process_type})\n"
+            f"RESUMEN DE AUTOS: {case_analysis.summary}\n\n"
+            f"HECHOS DEL EXPEDIENTE:\n{facts_summary}\n\n"
+            f"PRUEBAS DE AUTOS:\n{evidences_summary}\n\n"
+            f"ROL PROCESAL DEL ALUMNO: {user_role.value}\n\n"
+            "DIRECTIVAS DE EVALUACIÓN:\n"
+            "1. Veredicto Judicial Real: Redacta el fallo motivado en Derecho, resolviendo con precisión (condena o absolución, estimación o desestimación) citando las pruebas y hechos clave de este expediente.\n"
+            "2. Fundamentación Jurídica (ruling_summary): Redacta un extracto solemne en estilo forense auténtico de sentencia (con Resultandos y Considerandos jurídicos aplicados al debate en sala).\n"
+            "3. Rúbrica Pedagógica Rigurosa (0-100):\n"
+            "   - Coherencia argumentativa (lógica procesal y solidez retórica)\n"
+            "   - Fidelidad fáctica (apego estricto a los hechos sin inventar pruebas)\n"
+            "   - Manejo de pruebas (empleo estratégico de documentos, testificales y peritajes de autos)\n"
+            "4. Comentario Docente Personalizado (final_feedback): Analiza con detalle qué alegatos del alumno fueron determinantes, en qué acertó técnicamente y cómo influyó su estrategia en el veredicto.\n"
+            "5. Fortalezas y Áreas de Mejora: Enumera 3 fortalezas concretas y 3 recomendaciones prácticas para su futuro ejercicio profesional."
         )
 
         tools = [{
@@ -339,12 +392,12 @@ class LLMService:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "verdict": {"type": "string", "description": "Sentido de la resolución (ej. Condenatoria, Absolutoria, Con lugar, Sin lugar)"},
-                        "ruling_summary": {"type": "string", "description": "Fundamentación jurídica resumida del fallo"},
+                        "verdict": {"type": "string", "description": "Fallo judicial definitivo (ej. SENTENCIA CONDENATORIA / ABSOLUTORIA / ESTIMATORIA)"},
+                        "ruling_summary": {"type": "string", "description": "Fundamentación jurídica motivada con estructura formal de sentencia judicial"},
                         "score_coherence": {"type": "number", "minimum": 0, "maximum": 100},
                         "score_fidelity_to_facts": {"type": "number", "minimum": 0, "maximum": 100},
                         "score_evidence_usage": {"type": "number", "minimum": 0, "maximum": 100},
-                        "final_feedback": {"type": "string", "description": "Comentario pedagógico detallado"},
+                        "final_feedback": {"type": "string", "description": "Análisis pedagógico exhaustivo del desempeño del alumno en estrados"},
                         "strengths": {"type": "array", "items": {"type": "string"}},
                         "areas_for_improvement": {"type": "array", "items": {"type": "string"}}
                     },
@@ -353,9 +406,14 @@ class LLMService:
             }
         }]
 
-        user_content = f"Intervenciones del caso ({len(history)} turnos):\n"
+        user_content = f"Historial íntegro de la vista oral ({len(history)} intervenciones):\n"
         for item in history:
-            user_content += f"- [{item.get('stage')}] {item.get('speaker_name')} ({'USUARIO' if item.get('is_user') else 'IA'}): {item.get('text')}\n"
+            user_content += f"- [{item.get('stage')}] {item.get('speaker_name')} ({'ALUMNO' if item.get('is_user') else 'SISTEMA'}): {item.get('text')}\n"
+
+        if decisions:
+            user_content += "\nDecisiones estratégicas adoptadas por el alumno:\n"
+            for d in decisions:
+                user_content += f"- Etapa {d.get('stage')}: Opción={d.get('option')} | Texto={d.get('free_text')}\n"
 
         response = self.client.chat.completions.create(
             model=self.model,
@@ -365,7 +423,7 @@ class LLMService:
             ],
             tools=tools,
             tool_choice={"type": "function", "function": {"name": "save_academic_evaluation"}},
-            temperature=0.2
+            temperature=0.25
         )
 
         tool_call = response.choices[0].message.tool_calls[0]

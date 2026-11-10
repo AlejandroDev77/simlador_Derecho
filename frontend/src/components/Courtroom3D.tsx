@@ -267,6 +267,24 @@ export const Courtroom3D: React.FC<Courtroom3DProps> = ({
         rightDesk.position.set(3.8, 0.65, -0.8);
         scene.add(rightDesk);
 
+        // Sillas de estrado para las partes y letrados
+        const partyChairMat = new THREE.MeshStandardMaterial({ color: 0x22120a, roughness: 0.5 });
+        const createPartyChair = (x: number, z: number, rotY = 0) => {
+          const chairGroup = new THREE.Group();
+          const seat = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.08, 0.5), partyChairMat);
+          seat.position.y = 0.5;
+          const back = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.65, 0.08), partyChairMat);
+          back.position.set(0, 0.85, -0.21);
+          chairGroup.add(seat, back);
+          chairGroup.position.set(x, 0, z);
+          chairGroup.rotation.y = rotY;
+          scene.add(chairGroup);
+        };
+        createPartyChair(-3.0, -1.5, 0.2);
+        createPartyChair(-4.5, -1.5, 0.15);
+        createPartyChair(3.0, -1.5, -0.2);
+        createPartyChair(4.5, -1.5, -0.15);
+
         // Barandilla divisoria de la sala (Rail)
         const railMat = new THREE.MeshStandardMaterial({ color: 0x36190c, roughness: 0.3 });
         const rail = new THREE.Mesh(new THREE.BoxGeometry(15, 0.95, 0.18), railMat);
@@ -325,73 +343,129 @@ export const Courtroom3D: React.FC<Courtroom3DProps> = ({
         setModelStatus('Posicionando intervinientes en sala...');
         const loader = new GLTFLoader();
 
-        let judgeMesh: THREE.Object3D | null = null;
-        let plaintiffMesh: THREE.Object3D | null = null;
-        let defendantMesh: THREE.Object3D | null = null;
+        let judgeMesh: THREE.Group | null = null;
+        let lawyerPlaintiffMesh: THREE.Group | null = null;
+        let plaintiffMesh: THREE.Group | null = null;
+        let lawyerDefendantMesh: THREE.Group | null = null;
+        let defendantMesh: THREE.Group | null = null;
 
-        // Posiciones base de cada personaje
+        // Posiciones base de los 5 intervinientes en la sala
         const basePositions = {
-          judge: new THREE.Vector3(0, 0.85, -5.3),
-          plaintiff: new THREE.Vector3(-3.8, 0, -1.0),
-          defendant: new THREE.Vector3(3.8, 0, -1.0)
+          judge: new THREE.Vector3(0, 0.85, -5.7),
+          lawyerPlaintiff: new THREE.Vector3(-3.0, 0, -1.3),
+          plaintiff: new THREE.Vector3(-4.5, 0, -1.3),
+          lawyerDefendant: new THREE.Vector3(3.0, 0, -1.3),
+          defendant: new THREE.Vector3(4.5, 0, -1.3)
         };
 
-        // Posiciones adelantadas cuando están hablando y sosteniendo alegatos
+        // Posiciones de intervención: Los abogados se desplazan al CENTRO de la sala (alfombra burdeos)
         const speechPositions = {
-          judge: new THREE.Vector3(0, 0.88, -5.1),
-          plaintiff: new THREE.Vector3(-2.8, 0, -1.7),
-          defendant: new THREE.Vector3(2.8, 0, -1.7)
+          judge: new THREE.Vector3(0, 0.88, -5.2),
+          lawyerPlaintiff: new THREE.Vector3(-0.35, 0, -2.3), // Camina al centro del plenario ante el estrado
+          plaintiff: new THREE.Vector3(-1.4, 0, -2.6),         // Avanza a testificar/declarar
+          lawyerDefendant: new THREE.Vector3(0.35, 0, -2.3),  // Camina al centro del plenario ante el estrado
+          defendant: new THREE.Vector3(1.4, 0, -2.6)          // Avanza a prestar declaración
         };
 
-        const loadCharacter = (path: string, position: THREE.Vector3, scale: number, rotationY = 0) => {
-          return new Promise<THREE.Object3D>((resolve) => {
+        // Función robusta de carga con normalización de altura y apoyo en suelo (Box3)
+        const loadCharacter = (path: string, position: THREE.Vector3, targetHeight = 1.75, rotationY = 0) => {
+          return new Promise<THREE.Group>((resolve) => {
+            const characterGroup = new THREE.Group();
+            characterGroup.position.copy(position);
+            characterGroup.rotation.y = rotationY;
+
             loader.load(
               path,
               (gltf: any) => {
                 if (isDisposed) return;
                 const model = gltf.scene;
-                model.position.copy(position);
-                model.scale.set(scale, scale, scale);
-                model.rotation.y = rotationY;
-                scene.add(model);
-                resolve(model);
+
+                // Corrección de orientación para modelos Tripo 3D (juez1 y persona1 vienen exportados con vista lateral a +X)
+                // Rotar -90° para que su frente mire directamente hacia +Z (hacia la sala y tribunal)
+                if (path.includes('juez1') || path.includes('persona1')) {
+                  model.rotation.y = -Math.PI / 2;
+                }
+
+                // 1. Calcular caja envolvente y dimensiones reales del modelo ya reorientado
+                const box = new THREE.Box3().setFromObject(model);
+                const size = new THREE.Vector3();
+                box.getSize(size);
+
+                // 2. Escalar proporcionalmente para que mida exactamente targetHeight (ej. 1.75m)
+                const currentHeight = size.y || 1.0;
+                const scaleFactor = targetHeight / currentHeight;
+                model.scale.set(scaleFactor, scaleFactor, scaleFactor);
+
+                // 3. Recalcular la caja escalada para centrar en X/Z y alinear los pies exactamente a y=0
+                const scaledBox = new THREE.Box3().setFromObject(model);
+                const scaledCenter = new THREE.Vector3();
+                scaledBox.getCenter(scaledCenter);
+
+                model.position.x = -scaledCenter.x;
+                model.position.z = -scaledCenter.z;
+                model.position.y = -scaledBox.min.y; // Apoyo perfecto en suelo o tarima
+
+                // Optimizar rugosidad de materiales
+                model.traverse((child: any) => {
+                  if (child.isMesh && child.material) {
+                    if (Array.isArray(child.material)) {
+                      child.material.forEach((m: any) => { m.roughness = 0.55; });
+                    } else {
+                      child.material.roughness = 0.55;
+                    }
+                  }
+                });
+
+                characterGroup.add(model);
+                scene.add(characterGroup);
+                resolve(characterGroup);
               },
               undefined,
               (err: unknown) => {
-                console.warn(`Error cargando ${path}, usando avatar procedural`, err);
+                console.warn(`Aviso cargando ${path}, creando avatar procedimental:`, err);
                 if (isDisposed) return;
                 const fallbackGroup = new THREE.Group();
                 const body = new THREE.Mesh(
-                  new THREE.CylinderGeometry(0.3, 0.35, 1.4, 16),
+                  new THREE.CylinderGeometry(0.28, 0.32, 1.3, 16),
                   new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5 })
                 );
-                body.position.y = 0.7;
+                body.position.y = 0.65;
                 const head = new THREE.Mesh(
-                  new THREE.SphereGeometry(0.2, 16, 16),
+                  new THREE.SphereGeometry(0.18, 16, 16),
                   new THREE.MeshStandardMaterial({ color: 0xf5d0b5, roughness: 0.6 })
                 );
-                head.position.y = 1.55;
+                head.position.y = 1.45;
                 fallbackGroup.add(body, head);
-                fallbackGroup.position.copy(position);
-                scene.add(fallbackGroup);
-                resolve(fallbackGroup);
+                characterGroup.add(fallbackGroup);
+                scene.add(characterGroup);
+                resolve(characterGroup);
               }
             );
           });
         };
 
+        // Carga simultánea de los 5 personajes:
+        // 1. Juez: juez1.glb
+        // 2. Abogado Demandante / Fiscal: juez1.glb
+        // 3. Demandante: persona1.glb
+        // 4. Abogado Defensor: juez1.glb
+        // 5. Demandado: per2.glb
         Promise.all([
-          loadCharacter('/models/juez1.glb', basePositions.judge, 1.5, 0),
-          loadCharacter('/models/persona1.glb', basePositions.plaintiff, 1.5, 0.35),
-          loadCharacter('/models/per2.glb', basePositions.defendant, 1.5, -0.35)
-        ]).then(([jMesh, pMesh, dMesh]) => {
+          loadCharacter('/models/juez1.glb', basePositions.judge, 1.75, 0),
+          loadCharacter('/models/juez1.glb', basePositions.lawyerPlaintiff, 1.75, 0.45),
+          loadCharacter('/models/persona1.glb', basePositions.plaintiff, 1.72, 0.35),
+          loadCharacter('/models/juez1.glb', basePositions.lawyerDefendant, 1.75, -0.45),
+          loadCharacter('/models/per2.glb', basePositions.defendant, 1.72, -0.35)
+        ]).then(([jMesh, lpMesh, pMesh, ldMesh, dMesh]) => {
           if (isDisposed) return;
           judgeMesh = jMesh;
+          lawyerPlaintiffMesh = lpMesh;
           plaintiffMesh = pMesh;
+          lawyerDefendantMesh = ldMesh;
           defendantMesh = dMesh;
           setLoading3D(false);
         }).catch((e) => {
-          console.warn('Error en carga de personajes 3D:', e);
+          console.warn('Error en inicialización de personajes 3D:', e);
           if (!isDisposed) setLoading3D(false);
         });
 
@@ -467,12 +541,14 @@ export const Courtroom3D: React.FC<Courtroom3DProps> = ({
 
           const spkRole = currentSpeakerRoleRef.current;
           const isJudgeSpeaking = spkRole === 'juez';
-          const isPlaintiffSpeaking = spkRole === 'demandante' || spkRole === 'abogado_demandante' || spkRole === 'fiscal';
-          const isDefendantSpeaking = spkRole === 'demandado' || spkRole === 'abogado_demandado';
+          const isLawyerPlaintiffSpeaking = spkRole === 'abogado_demandante' || spkRole === 'fiscal';
+          const isPlaintiffSpeaking = spkRole === 'demandante';
+          const isLawyerDefendantSpeaking = spkRole === 'abogado_demandado' || spkRole === 'abogado_defensor';
+          const isDefendantSpeaking = spkRole === 'demandado';
 
-          // --- 8.1 MOVIMIENTO Y EXPRESIÓN DE PERSONAJES ---
+          // --- 8.1 MOVIMIENTO Y EXPRESIÓN DE LOS 5 PERSONAJES ---
 
-          // JUEZ: Inclinación solemne, cabeceo al hablar y seguimiento visual
+          // 1. JUEZ (Presidencia): Inclinación solemne, asentimiento al moderar
           if (judgeMesh) {
             const destPos = isJudgeSpeaking ? speechPositions.judge : basePositions.judge;
             judgeMesh.position.lerp(destPos, 0.05);
@@ -484,78 +560,160 @@ export const Courtroom3D: React.FC<Courtroom3DProps> = ({
               judgeMesh.position.y = destPos.y + Math.abs(Math.sin(t * 8)) * 0.025;
             } else {
               judgeMesh.rotation.x = THREE.MathUtils.lerp(judgeMesh.rotation.x, 0, 0.05);
-              const targetY = isPlaintiffSpeaking ? -0.25 : isDefendantSpeaking ? 0.25 : 0;
+              const targetY = (isLawyerPlaintiffSpeaking || isPlaintiffSpeaking) ? -0.22 : (isLawyerDefendantSpeaking || isDefendantSpeaking) ? 0.22 : 0;
               judgeMesh.rotation.y = THREE.MathUtils.lerp(judgeMesh.rotation.y, targetY, 0.04);
               judgeMesh.rotation.z = THREE.MathUtils.lerp(judgeMesh.rotation.z, 0, 0.05);
-              judgeMesh.scale.y = 1.5 + Math.sin(t * 2.2) * 0.012;
             }
           }
 
-          // ACUSACIÓN / DEMANDANTE: Se adelanta al estrado, gesticula y mira al Juez
+          // 2. ABOGADO DEMANDANTE / FISCAL: Camina fluidamente al centro de la sala
+          if (lawyerPlaintiffMesh) {
+            const destPos = isLawyerPlaintiffSpeaking ? speechPositions.lawyerPlaintiff : basePositions.lawyerPlaintiff;
+            const dist = lawyerPlaintiffMesh.position.distanceTo(destPos);
+            const isWalking = dist > 0.08;
+
+            lawyerPlaintiffMesh.position.lerp(destPos, isWalking ? 0.04 : 0.07);
+
+            if (isWalking) {
+              // Cadencia de paso al caminar hacia el centro o de regreso a su mesa
+              lawyerPlaintiffMesh.position.y = destPos.y + Math.abs(Math.sin(t * 10)) * 0.035;
+              lawyerPlaintiffMesh.rotation.z = Math.sin(t * 10) * 0.03;
+              const targetWalkingRot = isLawyerPlaintiffSpeaking ? 0.55 : -0.55;
+              lawyerPlaintiffMesh.rotation.y = THREE.MathUtils.lerp(lawyerPlaintiffMesh.rotation.y, targetWalkingRot, 0.08);
+            } else if (isLawyerPlaintiffSpeaking) {
+              // En el centro del plenario: oratoria forense ante el estrado y la sala
+              const targetRotationY = 0.05;
+              lawyerPlaintiffMesh.rotation.y = THREE.MathUtils.lerp(lawyerPlaintiffMesh.rotation.y, targetRotationY + Math.sin(t * 2.5) * 0.06, 0.06);
+              lawyerPlaintiffMesh.rotation.x = Math.sin(t * 7) * 0.04;
+              lawyerPlaintiffMesh.rotation.z = Math.cos(t * 5) * 0.02;
+              lawyerPlaintiffMesh.position.y = destPos.y + Math.abs(Math.sin(t * 8)) * 0.015;
+            } else {
+              // En su mesa: postura atenta orientada hacia el tribunal y el centro
+              const targetRotationY = isJudgeSpeaking ? 0.25 : (isLawyerDefendantSpeaking || isDefendantSpeaking) ? 0.40 : 0.20;
+              lawyerPlaintiffMesh.rotation.y = THREE.MathUtils.lerp(lawyerPlaintiffMesh.rotation.y, targetRotationY, 0.04);
+              lawyerPlaintiffMesh.rotation.x = THREE.MathUtils.lerp(lawyerPlaintiffMesh.rotation.x, 0, 0.05);
+              lawyerPlaintiffMesh.rotation.z = THREE.MathUtils.lerp(lawyerPlaintiffMesh.rotation.z, 0, 0.05);
+              lawyerPlaintiffMesh.position.y = destPos.y;
+            }
+          }
+
+          // 3. DEMANDANTE: Postura testimonial, atenta a su letrado y al tribunal
           if (plaintiffMesh) {
             const destPos = isPlaintiffSpeaking ? speechPositions.plaintiff : basePositions.plaintiff;
-            plaintiffMesh.position.lerp(destPos, 0.06);
+            const dist = plaintiffMesh.position.distanceTo(destPos);
+            const isWalking = dist > 0.08;
 
-            if (isPlaintiffSpeaking) {
-              const targetRotationY = 0.55;
+            plaintiffMesh.position.lerp(destPos, isWalking ? 0.04 : 0.06);
+
+            if (isWalking) {
+              plaintiffMesh.position.y = destPos.y + Math.abs(Math.sin(t * 9)) * 0.03;
+              plaintiffMesh.rotation.z = Math.sin(t * 9) * 0.025;
+            } else if (isPlaintiffSpeaking) {
+              const targetRotationY = 0.15;
               plaintiffMesh.rotation.y = THREE.MathUtils.lerp(plaintiffMesh.rotation.y, targetRotationY, 0.06);
-              plaintiffMesh.rotation.x = Math.sin(t * 8) * 0.05;
-              plaintiffMesh.rotation.z = Math.cos(t * 6) * 0.03;
-              plaintiffMesh.position.y = destPos.y + Math.sin(t * 10) * 0.02;
+              plaintiffMesh.rotation.x = Math.sin(t * 7) * 0.035;
+              plaintiffMesh.rotation.z = Math.cos(t * 5) * 0.02;
+              plaintiffMesh.position.y = destPos.y + Math.sin(t * 8) * 0.015;
             } else {
-              const targetRotationY = isJudgeSpeaking ? 0.45 : isDefendantSpeaking ? 0.75 : 0.35;
+              const targetRotationY = isJudgeSpeaking ? 0.22 : isLawyerPlaintiffSpeaking ? 0.12 : 0.18;
               plaintiffMesh.rotation.y = THREE.MathUtils.lerp(plaintiffMesh.rotation.y, targetRotationY, 0.04);
               plaintiffMesh.rotation.x = THREE.MathUtils.lerp(plaintiffMesh.rotation.x, 0, 0.05);
               plaintiffMesh.rotation.z = THREE.MathUtils.lerp(plaintiffMesh.rotation.z, 0, 0.05);
-              plaintiffMesh.scale.y = 1.5 + Math.sin(t * 2.0 + 1) * 0.012;
+              plaintiffMesh.position.y = destPos.y;
             }
           }
 
-          // DEFENSA: Se adelanta al estrado, refuta y gesticula
+          // 4. ABOGADO DEFENSOR: Camina fluidamente al centro de la sala
+          if (lawyerDefendantMesh) {
+            const destPos = isLawyerDefendantSpeaking ? speechPositions.lawyerDefendant : basePositions.lawyerDefendant;
+            const dist = lawyerDefendantMesh.position.distanceTo(destPos);
+            const isWalking = dist > 0.08;
+
+            lawyerDefendantMesh.position.lerp(destPos, isWalking ? 0.04 : 0.07);
+
+            if (isWalking) {
+              // Cadencia de paso al caminar hacia el centro o de regreso a su mesa
+              lawyerDefendantMesh.position.y = destPos.y + Math.abs(Math.sin(t * 10)) * 0.035;
+              lawyerDefendantMesh.rotation.z = Math.sin(t * 10) * 0.03;
+              const targetWalkingRot = isLawyerDefendantSpeaking ? -0.55 : 0.55;
+              lawyerDefendantMesh.rotation.y = THREE.MathUtils.lerp(lawyerDefendantMesh.rotation.y, targetWalkingRot, 0.08);
+            } else if (isLawyerDefendantSpeaking) {
+              // En el centro del plenario: oratoria de defensa y refutación
+              const targetRotationY = -0.05;
+              lawyerDefendantMesh.rotation.y = THREE.MathUtils.lerp(lawyerDefendantMesh.rotation.y, targetRotationY + Math.sin(t * 2.5) * 0.06, 0.06);
+              lawyerDefendantMesh.rotation.x = Math.sin(t * 7.5) * 0.045;
+              lawyerDefendantMesh.rotation.z = Math.cos(t * 5.5) * 0.025;
+              lawyerDefendantMesh.position.y = destPos.y + Math.abs(Math.sin(t * 8)) * 0.015;
+            } else {
+              // En su mesa: postura atenta orientada hacia el tribunal y el centro
+              const targetRotationY = isJudgeSpeaking ? -0.25 : (isLawyerPlaintiffSpeaking || isPlaintiffSpeaking) ? -0.40 : -0.20;
+              lawyerDefendantMesh.rotation.y = THREE.MathUtils.lerp(lawyerDefendantMesh.rotation.y, targetRotationY, 0.04);
+              lawyerDefendantMesh.rotation.x = THREE.MathUtils.lerp(lawyerDefendantMesh.rotation.x, 0, 0.05);
+              lawyerDefendantMesh.rotation.z = THREE.MathUtils.lerp(lawyerDefendantMesh.rotation.z, 0, 0.05);
+              lawyerDefendantMesh.position.y = destPos.y;
+            }
+          }
+
+          // 5. DEMANDADO / ACUSADO: Atento a las imputaciones, interviene con compostura
           if (defendantMesh) {
             const destPos = isDefendantSpeaking ? speechPositions.defendant : basePositions.defendant;
-            defendantMesh.position.lerp(destPos, 0.06);
+            const dist = defendantMesh.position.distanceTo(destPos);
+            const isWalking = dist > 0.08;
 
-            if (isDefendantSpeaking) {
-              const targetRotationY = -0.55;
+            defendantMesh.position.lerp(destPos, isWalking ? 0.04 : 0.06);
+
+            if (isWalking) {
+              defendantMesh.position.y = destPos.y + Math.abs(Math.sin(t * 9)) * 0.03;
+              defendantMesh.rotation.z = Math.sin(t * 9) * 0.025;
+            } else if (isDefendantSpeaking) {
+              const targetRotationY = -0.15;
               defendantMesh.rotation.y = THREE.MathUtils.lerp(defendantMesh.rotation.y, targetRotationY, 0.06);
-              defendantMesh.rotation.x = Math.sin(t * 8.5) * 0.05;
-              defendantMesh.rotation.z = Math.cos(t * 6.5) * 0.035;
-              defendantMesh.position.y = destPos.y + Math.sin(t * 10.5) * 0.02;
+              defendantMesh.rotation.x = Math.sin(t * 7) * 0.035;
+              defendantMesh.rotation.z = Math.cos(t * 5) * 0.025;
+              defendantMesh.position.y = destPos.y + Math.sin(t * 8) * 0.015;
             } else {
-              const targetRotationY = isJudgeSpeaking ? -0.45 : isPlaintiffSpeaking ? -0.75 : -0.35;
+              const targetRotationY = isJudgeSpeaking ? -0.22 : isLawyerDefendantSpeaking ? -0.12 : -0.18;
               defendantMesh.rotation.y = THREE.MathUtils.lerp(defendantMesh.rotation.y, targetRotationY, 0.04);
               defendantMesh.rotation.x = THREE.MathUtils.lerp(defendantMesh.rotation.x, 0, 0.05);
               defendantMesh.rotation.z = THREE.MathUtils.lerp(defendantMesh.rotation.z, 0, 0.05);
-              defendantMesh.scale.y = 1.5 + Math.sin(t * 2.1 + 2) * 0.012;
+              defendantMesh.position.y = destPos.y;
             }
           }
 
-          // --- 8.2 ACTUALIZACIÓN DE SPOTLIGHT Y AURA ---
+          // --- 8.2 ACTUALIZACIÓN DE SPOTLIGHT Y AURA ILUMINADA ---
           let activeSpeakerCoords = basePositions.judge;
-          if (isPlaintiffSpeaking) activeSpeakerCoords = speechPositions.plaintiff;
+          if (isJudgeSpeaking) activeSpeakerCoords = speechPositions.judge;
+          else if (isLawyerPlaintiffSpeaking) activeSpeakerCoords = speechPositions.lawyerPlaintiff;
+          else if (isPlaintiffSpeaking) activeSpeakerCoords = speechPositions.plaintiff;
+          else if (isLawyerDefendantSpeaking) activeSpeakerCoords = speechPositions.lawyerDefendant;
           else if (isDefendantSpeaking) activeSpeakerCoords = speechPositions.defendant;
 
           spotTarget.position.lerp(activeSpeakerCoords, 0.06);
-          speakerSpotlight.position.set(activeSpeakerCoords.x * 0.5, 8.5, activeSpeakerCoords.z + 3);
+          speakerSpotlight.position.set(activeSpeakerCoords.x * 0.5, 8.5, activeSpeakerCoords.z + 3.2);
 
           speakerAura.position.x = activeSpeakerCoords.x;
           speakerAura.position.z = activeSpeakerCoords.z;
           const auraPulse = 0.5 + Math.sin(t * 5) * 0.35;
-          auraMat.opacity = isSpeakingAudioRef.current ? auraPulse : 0.4;
+          auraMat.opacity = isSpeakingAudioRef.current ? auraPulse : 0.45;
           speakerAura.rotation.z = t * 0.5;
 
-          // --- 8.3 AUTO-DIRECTOR: SEGUIMIENTO AUTOMÁTICO DE CÁMARA ---
+          // --- 8.3 AUTO-DIRECTOR: SEGUIMIENTO CINEMATOGRÁFICO DE CÁMARA ---
           if (activePresetRef.current === 'auto') {
             if (isJudgeSpeaking) {
               targetCamPos.set(0, 2.2, -2.5);
-              targetCamLook.set(0, 2.0, -5.3);
+              targetCamLook.set(0, 2.0, -5.7);
+            } else if (isLawyerPlaintiffSpeaking) {
+              targetCamPos.set(-0.35, 1.8, 0.8);
+              targetCamLook.set(-0.35, 1.4, -2.3);
+            } else if (isLawyerDefendantSpeaking) {
+              targetCamPos.set(0.35, 1.8, 0.8);
+              targetCamLook.set(0.35, 1.4, -2.3);
             } else if (isPlaintiffSpeaking) {
-              targetCamPos.set(-1.8, 1.8, 0.6);
-              targetCamLook.set(-2.8, 1.4, -1.7);
+              targetCamPos.set(-1.0, 1.7, 0.0);
+              targetCamLook.set(-1.4, 1.3, -2.6);
             } else if (isDefendantSpeaking) {
-              targetCamPos.set(1.8, 1.8, 0.6);
-              targetCamLook.set(2.8, 1.4, -1.7);
+              targetCamPos.set(1.0, 1.7, 0.0);
+              targetCamLook.set(1.4, 1.3, -2.6);
             } else {
               targetCamPos.set(0, 3.6, 7.6);
               targetCamLook.set(0, 1.25, -2.0);

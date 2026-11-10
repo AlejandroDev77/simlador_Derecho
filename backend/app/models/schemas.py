@@ -136,3 +136,15 @@ class AcademicEvaluation(BaseModel):
     strengths: List[str] = []
     areas_for_improvement: List[str] = []
 
+
+class TrialProgressInfo(BaseModel):
+    estimated_total_minutes: int = 20
+    estimated_remaining_minutes: int = 20
+    total_stages: int = 5
+    current_stage_number: int = 1
+    current_stage_label: str = "Apertura y Trámite Previo"
+    current_turn_number: int = 1
+    total_estimated_turns: int = 12
+    progress_percent: int = 5
+
+

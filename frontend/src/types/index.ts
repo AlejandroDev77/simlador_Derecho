@@ -76,6 +76,17 @@ export interface DecisionOption {
   risk_level: 'bajo' | 'medio' | 'alto';
 }
 
+export interface TrialProgressInfo {
+  estimated_total_minutes: number;
+  estimated_remaining_minutes: number;
+  total_stages: number;
+  current_stage_number: number;
+  current_stage_label: string;
+  current_turn_number: number;
+  total_estimated_turns: number;
+  progress_percent: number;
+}
+
 export interface Intervention {
   id: string;
   speaker_role: LegalRole;

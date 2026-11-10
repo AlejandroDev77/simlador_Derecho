@@ -7,7 +7,8 @@ import type {
   Fact,
   Evidence,
   Intervention,
-  AcademicEvaluation
+  AcademicEvaluation,
+  TrialProgressInfo
 } from '../types';
 
 export interface StartSimulationResponse {
@@ -18,6 +19,7 @@ export interface StartSimulationResponse {
   current_stage: ProceduralStage;
   participants: Participant[];
   initial_intervention: Intervention;
+  progress_info?: TrialProgressInfo;
 }
 
 export interface SimulationStateResponse {
@@ -31,15 +33,21 @@ export interface SimulationStateResponse {
   evidences: Evidence[];
   interventions: Intervention[];
   current_options: Intervention['options'];
+  progress_info?: TrialProgressInfo;
 }
 
 export interface DecisionResponse {
   current_stage: ProceduralStage;
+  progress_info?: TrialProgressInfo;
   user_intervention: {
     id: string;
     text: string;
+    speaker_gender?: 'male' | 'female';
   };
   next_intervention: Intervention;
+  interventions_sequence?: Intervention[];
+  is_concluded?: boolean;
+  evaluation?: AcademicEvaluation;
 }
 
 export const simulationService = {

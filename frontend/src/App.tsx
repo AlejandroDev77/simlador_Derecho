@@ -15,6 +15,57 @@ import { simulationService } from './services/simulationService';
 import type { SimulationStateResponse } from './services/simulationService';
 import type { Step, CaseAnalysis, LegalRole, AcademicEvaluation, Intervention, VoiceSettings } from './types';
 
+function resolveSpeakerVoice(
+  speakerRole: string,
+  speakerName: string = '',
+  gender: string = 'male',
+  settings: VoiceSettings
+): string {
+  const isFemale = gender === 'female';
+  const role = (speakerRole || '').toLowerCase();
+  const name = (speakerName || '').toLowerCase();
+
+  // 1. Tribunal / Juez: Preservar voz solemne 'onyx' (o femaleVoice / 'nova' si jueza)
+  if (role === 'juez' || role.includes('juez') || name.includes('juez') || name.includes('magistrad')) {
+    return isFemale ? (settings.femaleVoice || 'nova') : (settings.maleVoice || 'onyx');
+  }
+
+  // 2. Abogado Demandante / Acusación / Fiscal: Voz distintiva 'fable' (o 'nova')
+  if (
+    role === 'abogado_demandante' ||
+    role === 'fiscal' ||
+    role.includes('acusac') ||
+    role.includes('fiscal') ||
+    name.includes('fiscal') ||
+    name.includes('prieto') ||
+    name.includes('actor')
+  ) {
+    return isFemale ? 'nova' : 'fable';
+  }
+
+  // 3. Abogado Defensor / Demandado: Voz distintiva 'echo' (o 'shimmer')
+  if (
+    role === 'abogado_demandado' ||
+    role === 'abogado_defensor' ||
+    role.includes('defens') ||
+    name.includes('defens') ||
+    name.includes('morales')
+  ) {
+    return isFemale ? 'shimmer' : 'echo';
+  }
+
+  // 4. Partes materiales (Demandante o Demandado):
+  if (role === 'demandante' || name.includes('demandante')) {
+    return isFemale ? 'shimmer' : 'alloy';
+  }
+  if (role === 'demandado' || role.includes('acusado') || name.includes('acusado') || name.includes('silva')) {
+    return isFemale ? 'nova' : 'alloy';
+  }
+
+  // Fallback adaptativo
+  return isFemale ? (settings.femaleVoice || 'nova') : (settings.maleVoice || 'onyx');
+}
+
 export default function App() {
   const [currentStep, setCurrentStep] = useState<Step>('upload');
   const [loading, setLoading] = useState(false);
@@ -39,6 +90,36 @@ export default function App() {
   // Audio / TTS con Web Speech API y configuración personalizada
   const [ttsEnabled, setTtsEnabled] = useState(true);
   const [isSpeakingAudio, setIsSpeakingAudio] = useState(false);
+  const [interventionQueue, setInterventionQueue] = useState<Intervention[]>([]);
+  const interventionQueueRef = useRef<Intervention[]>([]);
+
+  useEffect(() => {
+    interventionQueueRef.current = interventionQueue;
+  }, [interventionQueue]);
+
+  const advanceToNextIntervention = () => {
+    if (interventionQueueRef.current.length > 0) {
+      const [nextItem, ...rest] = interventionQueueRef.current;
+      interventionQueueRef.current = rest;
+      setInterventionQueue(rest);
+      setTimeout(() => {
+        setCurrentIntervention(nextItem);
+      }, 650);
+    } else {
+      setIsSpeakingAudio(false);
+    }
+  };
+
+  const handleSkipAudio = () => {
+    if (activeAudioRef.current) {
+      activeAudioRef.current.pause();
+      activeAudioRef.current = null;
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    advanceToNextIntervention();
+  };
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(() => {
     try {
       const saved = localStorage.getItem('simulador_voice_settings');
@@ -176,16 +257,32 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
       utterance.rate = Math.max(0.5, Math.min(2.0, calculatedRate));
 
       utterance.onstart = () => { if (!isCancelled) setIsSpeakingAudio(true); };
-      utterance.onend = () => { if (!isCancelled) setIsSpeakingAudio(false); };
-      utterance.onerror = () => { if (!isCancelled) setIsSpeakingAudio(false); };
+      utterance.onend = () => { if (!isCancelled) advanceToNextIntervention(); };
+      utterance.onerror = () => { if (!isCancelled) advanceToNextIntervention(); };
 
       window.speechSynthesis.speak(utterance);
     };
 
+    if (!ttsEnabled) {
+      // Si la locución de voz está apagada, dejar un tiempo prudente de lectura antes de pasar o activar turno
+      const timer = setTimeout(() => {
+        if (!isCancelled) advanceToNextIntervention();
+      }, 4000);
+      return () => {
+        isCancelled = true;
+        clearTimeout(timer);
+      };
+    }
+
     if (voiceSettings.engine === 'openai') {
-      // Detección de género: si el personaje es femenino se usa la voz femenina, de lo contrario la masculina
+      // Detección adaptativa de voz por rol procesal y género
       const isFemale = currentIntervention.speaker_gender === 'female';
-      const voice = isFemale ? (voiceSettings.femaleVoice || 'nova') : (voiceSettings.maleVoice || 'onyx');
+      const voice = resolveSpeakerVoice(
+        currentIntervention.speaker_role,
+        currentIntervention.speaker_name,
+        currentIntervention.speaker_gender || 'male',
+        voiceSettings
+      );
 
       simulationService.getSpeechAudioBlobUrl(currentIntervention.text, {
         voice,
@@ -204,13 +301,14 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
           if (!isCancelled) setIsSpeakingAudio(true);
         };
         audio.onended = () => {
-          if (!isCancelled) setIsSpeakingAudio(false);
-          URL.revokeObjectURL(blobUrl);
-          activeAudioRef.current = null;
+          if (!isCancelled) {
+            URL.revokeObjectURL(blobUrl);
+            activeAudioRef.current = null;
+            advanceToNextIntervention();
+          }
         };
         audio.onerror = () => {
           if (!isCancelled) {
-            setIsSpeakingAudio(false);
             URL.revokeObjectURL(blobUrl);
             activeAudioRef.current = null;
             speakWithBrowserFallback();
@@ -337,9 +435,50 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
         free_text_response: freeText.trim() || undefined
       });
 
+      // 1. Crear intervención del alumno para que su avatar pase al estrado central, hable y gesticule primero
+      const userRole = simState?.user_role || selectedRole;
+      const userGender = res.user_intervention?.speaker_gender || 'male';
+      const roleLabel = userRole === 'abogado_demandante'
+        ? 'Letrado Acusación'
+        : userRole === 'fiscal'
+        ? 'Ministerio Fiscal'
+        : userRole === 'abogado_defensor' || userRole === 'abogado_demandado'
+        ? 'Letrado Defensor'
+        : userRole === 'demandante'
+        ? 'Parte Demandante'
+        : 'Parte Demandada';
+
+      const userIntervention: Intervention = {
+        id: res.user_intervention?.id || `user_inv_${Date.now()}`,
+        speaker_role: userRole,
+        speaker_name: `Tú (${roleLabel})`,
+        stage: res.current_stage || simState?.current_stage || 'alegatos',
+        text: res.user_intervention?.text || freeText || 'Sostengo la argumentación conforme a las constancias de autos.',
+        is_user: true,
+        model_3d_key: 'persona1',
+        speaker_gender: userGender,
+        options: []
+      };
+
+      // 2. Secuencia completa: Primero expone el alumno en el centro -> luego réplica y moderación
+      const aiSequence = (res.interventions_sequence && res.interventions_sequence.length > 0)
+        ? res.interventions_sequence
+        : (res.next_intervention ? [res.next_intervention] : []);
+
+      const fullSequence = [userIntervention, ...aiSequence];
+
       setSelectedOptionId(null);
       setFreeText('');
-      setCurrentIntervention(res.next_intervention);
+
+      setCurrentIntervention(fullSequence[0]);
+      const remaining = fullSequence.slice(1);
+      interventionQueueRef.current = remaining;
+      setInterventionQueue(remaining);
+
+      // Si la simulación ha concluido con el fallo del juez, registrar la evaluación
+      if (res.is_concluded && res.evaluation) {
+        setEvaluation(res.evaluation);
+      }
 
       const stateRes = await simulationService.getSimulationState(sessionId);
       setSimState(stateRes);
@@ -353,6 +492,10 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
   // Finalizar y Evaluar
   const handleEvaluate = async () => {
     if (!sessionId) return;
+    if (evaluation) {
+      setCurrentStep('evaluation');
+      return;
+    }
     setLoading(true);
     setErrorMessage(null);
     try {
@@ -468,6 +611,8 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
               onSubmitDecision={handleSubmitDecision}
               onOpenObjection={() => setShowObjectionModal(true)}
               loading={loading}
+              onSkipAudio={handleSkipAudio}
+              queueLength={interventionQueue.length}
             />
 
             <ObjectionModal

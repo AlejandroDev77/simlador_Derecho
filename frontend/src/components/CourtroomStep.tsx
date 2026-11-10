@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import {
-  MessageSquare, Volume2, VolumeX, BookOpen, AlertTriangle, ArrowRight, Settings, Maximize2, Minimize2, Scale, Clock
+  MessageSquare, Volume2, VolumeX, BookOpen, AlertTriangle, ArrowRight, Settings, Maximize2, Minimize2, Scale, Clock, CheckCircle2, ChevronRight, FileText, User, Gavel
 } from './Icons';
 import { Courtroom3D } from './Courtroom3D';
 import type { Intervention } from '../types';
@@ -64,6 +64,8 @@ export const CourtroomStep: React.FC<CourtroomStepProps> = ({
     }
   }, [currentIntervention]);
 
+  const isJudge = simState.user_role === 'juez';
+
   const progress = simState.progress_info || {
     estimated_total_minutes: 20,
     estimated_remaining_minutes: 16,
@@ -87,145 +89,115 @@ export const CourtroomStep: React.FC<CourtroomStepProps> = ({
   const activeIndex = currentStageIndex >= 0 ? currentStageIndex : 0;
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden space-y-2">
-      {/* Barra de Estado Procesal, Duración y Controles */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between px-3 py-2 bg-stone-900/90 border border-stone-800 rounded-xl backdrop-blur-md shrink-0 shadow-md gap-2">
+    <div className="flex-1 flex flex-col space-y-3.5 pb-6">
+      {/* Barra Superior: Estado Procesal, Duración y Controles */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between px-3.5 py-2.5 bg-[#14263D] border border-[#243F5B] rounded-2xl text-slate-100 shrink-0 shadow-md gap-2">
         <div className="flex flex-wrap items-center gap-2">
           {/* Indicador de Etapa Activa */}
-          <div className="flex items-center space-x-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-sm shadow-emerald-500/50" />
-            <span className="text-xs font-bold text-stone-100 uppercase tracking-wider">
+          <div className="flex items-center space-x-2 px-2.5 py-1 rounded-lg bg-[#243F5B]/80 border border-[#C5A15B]/40">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-xs shrink-0" />
+            <span className="text-xs font-bold text-white uppercase tracking-wider">
               {simState.current_stage.replace(/_/g, ' ')}
             </span>
           </div>
 
-          <span className="text-stone-600 hidden md:inline">•</span>
+          <span className="text-slate-500 hidden md:inline">•</span>
 
           {/* Duración Estimada del Juicio */}
-          <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-stone-950/80 border border-stone-800 text-xs shadow-inner">
-            <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            <span className="text-stone-300">
-              Duración juicio: <strong className="text-stone-100 font-semibold">~{progress.estimated_total_minutes} min</strong>
+          <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-[#0F1E31]/80 border border-[#243F5B] text-xs shadow-inner">
+            <Clock className="w-3.5 h-3.5 text-[#C5A15B] shrink-0" />
+            <span className="text-slate-300">
+              Duración prevista: <strong className="text-white font-semibold">~{progress.estimated_total_minutes} min</strong>
             </span>
-            <span className="text-stone-600">•</span>
-            <span className="text-amber-400 font-medium">
-              Quedan: ~{progress.estimated_remaining_minutes} min ({progress.current_turn_number}/{progress.total_estimated_turns} turnos)
+            <span className="text-slate-600">•</span>
+            <span className="text-[#C5A15B] font-medium">
+              Restante: ~{progress.estimated_remaining_minutes} min (Turno {progress.current_turn_number}/{progress.total_estimated_turns})
             </span>
           </div>
 
-          <span className="text-stone-600 hidden lg:inline">•</span>
+          <span className="text-slate-500 hidden lg:inline">•</span>
 
           {/* Rol del Usuario */}
-          <span className="text-xs text-amber-400 font-semibold bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
-            Tu Rol: {simState.user_role.toUpperCase()}
+          <span className="text-xs text-[#C5A15B] font-semibold bg-[#243F5B] border border-[#C5A15B]/30 px-2.5 py-1 rounded-md">
+            Rol en Estrados: {isJudge ? 'MAGISTRADO PRESIDENTE (TRIBUNAL)' : simState.user_role.toUpperCase()}
           </span>
         </div>
 
         <div className="flex items-center space-x-2 shrink-0">
-          {/* Botón para Ampliar Sala / Pantalla Completa */}
+          {/* Botón para Ampliar Sala / Vista Panorámica */}
           <button
             onClick={() => setIsTheaterMode(!isTheaterMode)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border flex items-center space-x-1.5 shadow-sm ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border flex items-center space-x-1.5 shadow-xs cursor-pointer ${
               isTheaterMode
-                ? 'bg-amber-500 text-stone-950 border-amber-400'
-                : 'bg-stone-800 hover:bg-stone-700 text-amber-400 border-stone-700 hover:border-amber-500/40'
+                ? 'bg-[#C5A15B] text-[#14263D] border-[#C5A15B]'
+                : 'bg-[#243F5B] hover:bg-[#1C3554] text-slate-200 border-[#243F5B]'
             }`}
-            title={isTheaterMode ? 'Regresar a vista estándar' : 'Maximizar sala 3D a pantalla panorámica'}
+            title={isTheaterMode ? 'Regresar a vista con panel procesal' : 'Ampliar sala 3D a pantalla panorámica'}
           >
             {isTheaterMode ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-            <span>{isTheaterMode ? 'Vista Estándar' : 'Ampliar Sala 3D'}</span>
+            <span>{isTheaterMode ? 'Vista Estándar' : 'Ampliar Sala'}</span>
           </button>
 
+          {/* Toggle de Locución Oral */}
           <button
             onClick={onToggleTts}
-            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all border flex items-center space-x-1 ${
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all border flex items-center space-x-1 cursor-pointer ${
               ttsEnabled
-                ? 'bg-amber-950/40 border-amber-600/50 text-amber-300'
-                : 'bg-stone-800 border-stone-700 text-stone-400 hover:text-stone-200'
+                ? 'bg-[#243F5B] border-[#C5A15B]/50 text-[#C5A15B]'
+                : 'bg-[#1C3554] border-[#243F5B] text-slate-400 hover:text-slate-200'
             }`}
             title={ttsEnabled ? 'Silenciar locución oral' : 'Activar locución oral'}
           >
-            {ttsEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-            <span className="hidden sm:inline">{ttsEnabled ? 'Voz On' : 'Voz Off'}</span>
+            {ttsEnabled ? <Volume2 className="w-3.5 h-3.5 text-[#C5A15B]" /> : <VolumeX className="w-3.5 h-3.5" />}
+            <span className="hidden sm:inline">{ttsEnabled ? 'Voz Activa' : 'Sin Voz'}</span>
           </button>
 
+          {/* Configuración Rápida de Voces */}
           <button
             onClick={onOpenVoiceSettings}
-            className="px-2.5 py-1.5 bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-amber-400 rounded-lg text-xs font-medium transition-all border border-stone-700 flex items-center space-x-1"
-            title="Configurar tipo de voz forense"
+            className="px-2.5 py-1.5 bg-[#243F5B] hover:bg-[#1C3554] text-slate-200 hover:text-white rounded-lg text-xs font-medium transition-all border border-[#243F5B] flex items-center space-x-1 cursor-pointer"
+            title="Ajustar parámetros vocales forenses"
           >
-            <Settings className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Voz</span>
+            <Settings className="w-3.5 h-3.5 text-[#C5A15B]" />
+            <span className="hidden sm:inline">Ajustes</span>
           </button>
 
+          {/* Consultar Expediente / Autos */}
           <button
             onClick={onToggleDossier}
-            className="px-2.5 py-1.5 bg-stone-800 hover:bg-stone-700 text-stone-300 rounded-lg text-xs font-medium transition-all border border-stone-700 flex items-center space-x-1"
+            className="px-2.5 py-1.5 bg-[#243F5B] hover:bg-[#1C3554] text-slate-200 rounded-lg text-xs font-medium transition-all border border-[#243F5B] flex items-center space-x-1 cursor-pointer"
             title="Consultar hechos y pruebas documentadas del expediente"
           >
-            <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+            <BookOpen className="w-3.5 h-3.5 text-[#C5A15B]" />
             <span className="hidden sm:inline">{showDossier ? 'Ocultar Autos' : 'Ver Autos'}</span>
           </button>
 
+          {/* Dictar Fallo Inmediato */}
           <button
             onClick={onEvaluate}
             disabled={loading}
-            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-stone-950 rounded-lg text-xs font-bold transition-all shadow-md flex items-center space-x-1"
+            className="px-3 py-1.5 bg-[#C5A15B] hover:bg-[#B5924D] text-[#14263D] font-bold rounded-lg text-xs transition-all shadow-md flex items-center space-x-1 cursor-pointer disabled:opacity-50"
           >
             <Scale className="w-3.5 h-3.5" />
-            <span>Dictar Fallo</span>
+            <span>Emitir Fallo</span>
           </button>
         </div>
       </div>
 
-      {/* Línea de Tiempo Procesal (Stepper visual de las 5 etapas del juicio) */}
-      <div className="px-3 py-1.5 bg-stone-950/70 border border-stone-800/80 rounded-xl flex items-center justify-between text-[11px] gap-1 shrink-0 overflow-x-auto">
-        {STAGES_LIST.map((stage, idx) => {
-          const isDone = idx < activeIndex;
-          const isCurrent = idx === activeIndex;
-          return (
-            <div
-              key={stage.key}
-              className={`flex-1 min-w-[110px] flex items-center space-x-1.5 px-2 py-1 rounded-lg transition-all ${
-                isCurrent
-                  ? 'bg-amber-500/20 border border-amber-500/50 text-amber-300 shadow-sm'
-                  : isDone
-                  ? 'bg-stone-900/60 border border-stone-800 text-stone-400'
-                  : 'bg-stone-950/40 border border-stone-900 text-stone-600'
-              }`}
-            >
-              <span
-                className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
-                  isCurrent
-                    ? 'bg-amber-500 text-stone-950 ring-2 ring-amber-400/40'
-                    : isDone
-                    ? 'bg-emerald-600 text-stone-100'
-                    : 'bg-stone-800 text-stone-500'
-                }`}
-              >
-                {isDone ? '✓' : idx + 1}
-              </span>
-              <div className="flex flex-col truncate">
-                <span className={`font-semibold truncate ${isCurrent ? 'text-amber-200' : ''}`}>{stage.label}</span>
-                <span className="text-[9px] text-stone-500">{stage.time}</span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Contenedor Principal: Sala 3D + Consola Procesal */}
-      <div className="flex-1 relative grid grid-cols-1 lg:grid-cols-12 gap-3 min-h-0 overflow-hidden">
+      {/* ======================================================== */}
+      {/* CONTENEDOR DE LOS DOS CARDS: SALA 3D Y PANEL DE DEBATE */}
+      {/* ======================================================== */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 min-h-[580px] lg:h-[calc(100vh-220px)] lg:min-h-[580px] xl:h-[calc(100vh-200px)] shrink-0">
         {/* ======================================================== */}
-        {/* ESCENA 3D PRINCIPAL (AMPLIADA Y DESTACADA) */}
+        {/* CARD 1: ESCENA 3D PRINCIPAL */}
         {/* ======================================================== */}
         <div
           className={`flex flex-col h-full transition-all duration-300 relative ${
             isTheaterMode ? 'col-span-12' : 'lg:col-span-8'
           }`}
         >
-          {/* Canvas Three.js */}
-          <div className="flex-1 w-full h-full relative overflow-hidden rounded-2xl">
+          {/* Canvas Three.js con marco institucional */}
+          <div className="flex-1 w-full h-full relative overflow-hidden rounded-2xl border border-slate-200 shadow-md bg-white">
             <Courtroom3D
               currentSpeakerRole={currentIntervention?.speaker_role}
               userRole={simState.user_role}
@@ -233,39 +205,40 @@ export const CourtroomStep: React.FC<CourtroomStepProps> = ({
               isSpeakingAudio={isSpeakingAudio}
             />
 
-            {/* Subtítulo Dinámico Estilo Transmisión Judicial (Chyron Flotante) */}
+            {/* Subtítulo Dinámico Estilo Transmisión Judicial */}
             {currentIntervention && (
-              <div className="absolute bottom-12 left-3 right-3 sm:left-10 sm:right-10 lg:left-14 lg:right-14 z-15 bg-stone-950/85 backdrop-blur-md border border-stone-700/80 rounded-2xl p-3 sm:p-4 shadow-2xl flex items-start space-x-3 pointer-events-auto transition-all animate-fadeIn">
-                <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 shrink-0 mt-0.5">
+              <div className="absolute bottom-12 left-3 right-3 sm:left-6 sm:right-6 lg:left-8 lg:right-8 z-20 bg-[#14263D]/95 backdrop-blur-md border border-[#C5A15B]/50 rounded-2xl p-3 sm:p-4 shadow-2xl flex items-start space-x-3 pointer-events-auto transition-all animate-fadeIn max-h-36 overflow-y-auto">
+                <div className="p-2.5 rounded-xl bg-[#243F5B] text-[#C5A15B] border border-[#C5A15B]/40 shrink-0 mt-0.5">
                   <MessageSquare className="w-4 h-4" />
                 </div>
                 <div className="flex-1 text-xs">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="font-bold text-amber-400 text-sm flex items-center gap-2">
+                    <span className="font-bold text-[#C5A15B] text-sm flex items-center gap-2">
                       <span>{currentIntervention.speaker_name}</span>
-                      <span className="text-[10px] font-normal px-2 py-0.5 rounded-full bg-stone-800 text-stone-300 border border-stone-700 uppercase">
+                      <span className="text-[10px] font-normal px-2 py-0.5 rounded-full bg-[#243F5B] text-slate-200 border border-[#243F5B] uppercase">
                         {currentIntervention.speaker_role}
                       </span>
                     </span>
                     {isSpeakingAudio && (
                       <div className="flex items-center space-x-2">
-                        <span className="text-[11px] text-amber-400 animate-pulse font-bold flex items-center space-x-1 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/30">
-                          <Volume2 className="w-3.5 h-3.5 text-amber-400" />
+                        <span className="text-[11px] text-[#C5A15B] animate-pulse font-bold flex items-center space-x-1 bg-[#243F5B] px-2.5 py-0.5 rounded-full border border-[#C5A15B]/30">
+                          <Volume2 className="w-3.5 h-3.5 text-[#C5A15B]" />
                           <span>Exponiendo en estrados...</span>
                         </span>
                         {onSkipAudio && (
                           <button
                             onClick={onSkipAudio}
-                            className="px-2 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white border border-stone-700 text-[10px] transition-all cursor-pointer"
-                            title="Omitir audio y pasar a la siguiente intervención"
+                            className="px-2 py-0.5 rounded bg-[#243F5B] hover:bg-[#1C3554] text-slate-200 hover:text-white border border-[#243F5B] text-[10px] transition-all cursor-pointer flex items-center space-x-1"
+                            title="Omitir audio y avanzar turno"
                           >
-                            Avanzar ⏭
+                            <span>Avanzar</span>
+                            <ArrowRight className="w-3 h-3" />
                           </button>
                         )}
                       </div>
                     )}
                   </div>
-                  <p className="text-stone-100 leading-relaxed text-xs sm:text-[13px] font-normal">
+                  <p className="text-white leading-relaxed text-xs sm:text-[13px] font-normal">
                     {currentIntervention.text}
                   </p>
                 </div>
@@ -275,9 +248,8 @@ export const CourtroomStep: React.FC<CourtroomStepProps> = ({
         </div>
 
         {/* ======================================================== */}
-        {/* PANEL DE INTERACCIÓN Y DEBATE */}
+        {/* CARD 2: PANEL DE INTERACCIÓN Y RESPUESTAS */}
         {/* ======================================================== */}
-        {/* Si está en modo teatro, es un panel flotante retráctil; si no, ocupa 4 columnas */}
         <div
           className={`${
             isTheaterMode
@@ -285,21 +257,21 @@ export const CourtroomStep: React.FC<CourtroomStepProps> = ({
                   showFloatingPanel ? 'translate-x-0' : 'translate-x-[105%]'
                 }`
               : 'lg:col-span-4 h-full'
-          } flex flex-col bg-stone-900/95 border border-stone-800 rounded-2xl overflow-hidden backdrop-blur-xl`}
+          } flex flex-col bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-md`}
         >
           {/* Cabecera del Panel */}
-          <div className="p-3 border-b border-stone-800 bg-stone-950/70 flex items-center justify-between">
+          <div className="p-3 border-b border-[#243F5B] bg-[#14263D] flex items-center justify-between text-white shrink-0">
             <div>
-              <h3 className="text-xs font-bold text-stone-100 flex items-center space-x-1.5">
-                <span className="w-2 h-2 rounded-full bg-amber-400" />
+              <h3 className="text-xs font-bold text-white flex items-center space-x-1.5">
+                <span className="w-2 h-2 rounded-full bg-[#C5A15B]" />
                 <span>Debate Procesal Forense</span>
               </h3>
-              <p className="text-[10px] text-stone-400">Control de fidelidad a los hechos</p>
+              <p className="text-[10px] text-slate-300">Control de fidelidad fáctica y probatoria</p>
             </div>
             {isTheaterMode && (
               <button
                 onClick={() => setShowFloatingPanel(false)}
-                className="text-stone-400 hover:text-stone-200 text-xs p-1"
+                className="text-slate-400 hover:text-white text-xs p-1 cursor-pointer"
                 title="Ocultar panel flotante"
               >
                 ✕
@@ -309,25 +281,30 @@ export const CourtroomStep: React.FC<CourtroomStepProps> = ({
 
           {/* Panel Desplegable de Autos / Expediente */}
           {showDossier && (
-            <div className="p-3 bg-stone-950 border-b border-stone-800 max-h-48 overflow-y-auto space-y-2 text-xs">
+            <div className="p-3 bg-[#F5F3EF] border-b border-slate-200 max-h-44 overflow-y-auto space-y-2 text-xs shrink-0">
               <div className="flex items-center justify-between">
-                <span className="font-bold text-amber-400 uppercase text-[10px]">Hechos y Pruebas en Autos</span>
-                <button onClick={onToggleDossier} className="text-[10px] text-stone-500 hover:text-stone-300">
+                <span className="font-bold text-[#14263D] uppercase text-[10px] tracking-wider">
+                  Hechos y Pruebas en Autos
+                </span>
+                <button
+                  onClick={onToggleDossier}
+                  className="text-[10px] text-slate-500 hover:text-[#14263D] font-semibold cursor-pointer"
+                >
                   Ocultar
                 </button>
               </div>
               <div className="space-y-1.5">
                 {simState.facts.map((f, idx) => (
-                  <div key={idx} className="p-2 rounded bg-stone-900 border border-stone-800 text-[11px] text-stone-300">
-                    <span className="font-semibold text-stone-400 mr-1.5">
+                  <div key={idx} className="p-2 rounded-lg bg-white border border-slate-200 text-[11px] text-[#334155] shadow-xs">
+                    <span className="font-bold text-[#14263D] mr-1.5">
                       H#{idx + 1} (Pág. {f.source_references[0]?.page_number || 1}):
                     </span>
                     {f.description}
                   </div>
                 ))}
                 {simState.evidences.map((e, idx) => (
-                  <div key={idx} className="p-2 rounded bg-stone-900 border border-stone-800 text-[11px] text-stone-300">
-                    <span className="font-semibold text-amber-300 mr-1.5">Prueba ({e.evidence_type}):</span>
+                  <div key={idx} className="p-2 rounded-lg bg-white border border-slate-200 text-[11px] text-[#334155] shadow-xs">
+                    <span className="font-bold text-[#C5A15B] mr-1.5">Prueba ({e.evidence_type}):</span>
                     {e.name} - {e.description}
                   </div>
                 ))}
@@ -336,54 +313,65 @@ export const CourtroomStep: React.FC<CourtroomStepProps> = ({
           )}
 
           {/* Historial de Intervenciones con Scroll */}
-          <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-3 space-y-2.5 min-h-0">
+          <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-3 space-y-2.5 min-h-[120px] bg-[#F8F9FA]">
             {simState.interventions.map((item, idx) => (
               <div
                 key={item.id || idx}
                 className={`p-2.5 rounded-xl text-xs space-y-1 ${
                   item.is_user
-                    ? 'bg-amber-950/40 border border-amber-600/40 ml-4'
-                    : 'bg-stone-950/70 border border-stone-800 mr-4'
+                    ? 'bg-[#243F5B] text-white border border-[#243F5B] ml-4 shadow-xs'
+                    : 'bg-white text-[#334155] border border-slate-200 mr-4 shadow-xs'
                 }`}
               >
                 <div className="flex items-center justify-between text-[10px]">
-                  <span className={item.is_user ? 'font-bold text-amber-400' : 'font-bold text-stone-300'}>
+                  <span className={item.is_user ? 'font-bold text-[#C5A15B]' : 'font-bold text-[#14263D]'}>
                     {item.speaker_name}
                   </span>
-                  <span className="text-stone-500 uppercase">{item.stage}</span>
+                  <span className={item.is_user ? 'text-slate-300 uppercase' : 'text-slate-400 uppercase'}>
+                    {item.stage}
+                  </span>
                 </div>
-                <p className="text-stone-300 leading-relaxed text-[11.5px]">{item.text}</p>
+                <p className={`leading-relaxed text-[11.5px] ${item.is_user ? 'text-slate-100' : 'text-[#334155]'}`}>
+                  {item.text}
+                </p>
               </div>
             ))}
           </div>
 
           {/* Opciones de Decisión Táctica o Redacción Libre */}
-          <div className="p-3 border-t border-stone-800 bg-stone-950/90 space-y-2.5 shrink-0">
-            {simState.status === 'concluido' || (simState.current_stage === 'concluido' && queueLength === 0 && !isSpeakingAudio) || (currentIntervention?.stage === 'deliberacion_sentencia' && (!currentIntervention?.options || currentIntervention.options.length === 0) && queueLength === 0 && !isSpeakingAudio) ? (
-              <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-600/60 text-center space-y-3 shadow-lg">
-                <div className="flex items-center justify-center space-x-2 text-amber-400 font-bold text-xs uppercase tracking-wider">
-                  <Scale className="w-5 h-5 text-amber-400" />
+          <div className="p-3 border-t border-slate-200 bg-white space-y-2 shrink-0">
+            {simState.status === 'concluido' ||
+            (simState.current_stage === 'concluido' && queueLength === 0 && !isSpeakingAudio) ||
+            (currentIntervention?.stage === 'deliberacion_sentencia' &&
+              (!currentIntervention?.options || currentIntervention.options.length === 0) &&
+              queueLength === 0 &&
+              !isSpeakingAudio) ? (
+              <div className="p-3.5 rounded-xl bg-[#F5F3EF] border border-[#C5A15B] text-center space-y-2.5 shadow-md">
+                <div className="flex items-center justify-center space-x-2 text-[#14263D] font-bold text-xs uppercase tracking-wider">
+                  <Scale className="w-5 h-5 text-[#C5A15B]" />
                   <span>Audiencia Judicial Concluida</span>
                 </div>
-                <p className="text-[11.5px] text-stone-300 leading-relaxed">
-                  El Tribunal ha deliberado y dictado la Sentencia Judicial definitiva. Procede a consultar el informe de evaluación pedagógica y análisis forense.
+                <p className="text-[11px] text-[#334155] leading-relaxed">
+                  El Tribunal ha deliberado y dictado la Sentencia Judicial definitiva. Procede a consultar el informe de evaluación académica y análisis forense.
                 </p>
                 <button
                   onClick={onEvaluate}
                   disabled={loading}
-                  className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-xl text-xs flex items-center justify-center space-x-2 shadow-lg transition-transform hover:scale-[1.02] cursor-pointer"
+                  className="w-full py-2.5 bg-[#243F5B] hover:bg-[#1C3554] text-white font-bold rounded-xl text-xs flex items-center justify-center space-x-2 shadow-md transition-all cursor-pointer"
                 >
-                  <Scale className="w-4 h-4" />
+                  <Scale className="w-4 h-4 text-[#C5A15B]" />
                   <span>Consultar Sentencia y Evaluación Académica</span>
                 </button>
               </div>
             ) : (
               <>
-                <span className="text-[11px] font-bold text-stone-200 block">Tu Turno de Intervención:</span>
+                <span className="text-[11px] font-bold text-[#14263D] block">
+                  {isJudge ? 'Providencia y Dirección Judicial del Tribunal:' : 'Turno de Intervención Procesal:'}
+                </span>
 
                 {/* Opciones estructuradas sugeridas */}
                 {currentIntervention?.options && currentIntervention.options.length > 0 && (
-                  <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                  <div className="space-y-1.5 max-h-32 overflow-y-auto">
                     {currentIntervention.options.map((opt) => (
                       <div
                         key={opt.id}
@@ -393,25 +381,27 @@ export const CourtroomStep: React.FC<CourtroomStepProps> = ({
                         }}
                         className={`p-2 rounded-xl border text-xs cursor-pointer transition-all ${
                           selectedOptionId === opt.id
-                            ? 'bg-amber-950/70 border-amber-500 ring-1 ring-amber-500'
-                            : 'bg-stone-900/90 border-stone-800 hover:border-stone-700'
+                            ? 'bg-[#F5F3EF] border-[#C5A15B] ring-2 ring-[#C5A15B]/40 shadow-xs'
+                            : 'bg-white border-slate-200 hover:border-slate-300'
                         }`}
                       >
                         <div className="flex items-center justify-between text-[10px] mb-0.5">
-                          <span className="font-semibold text-amber-300">Táctica: {opt.legal_tactic || 'Alegato'}</span>
+                          <span className="font-bold text-[#243F5B]">
+                            {isJudge ? 'Decisión Judicial: ' : 'Táctica: '}{opt.legal_tactic || (isJudge ? 'Providencia' : 'Alegato')}
+                          </span>
                           <span
-                            className={`px-1.5 py-0.2 rounded font-semibold ${
+                            className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold ${
                               opt.risk_level === 'alto'
-                                ? 'bg-red-950 text-red-400'
+                                ? 'bg-rose-50 text-rose-700 border border-rose-200'
                                 : opt.risk_level === 'medio'
-                                ? 'bg-amber-950 text-amber-400'
-                                : 'bg-emerald-950 text-emerald-400'
+                                ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                             }`}
                           >
                             Riesgo {opt.risk_level}
                           </span>
                         </div>
-                        <p className="text-stone-200 text-[11px] leading-tight">{opt.text}</p>
+                        <p className="text-[#334155] text-[11px] leading-tight">{opt.text}</p>
                       </div>
                     ))}
                   </div>
@@ -426,57 +416,77 @@ export const CourtroomStep: React.FC<CourtroomStepProps> = ({
                       onChangeFreeText(e.target.value);
                       onSelectOptionId(null);
                     }}
-                    placeholder="O redacta tu propia alegación procesal..."
-                    className="w-full p-2 bg-stone-900 border border-stone-800 rounded-lg text-xs text-stone-200 placeholder-stone-500 focus:outline-none focus:border-amber-500 resize-none"
+                    placeholder={isJudge ? "O dicte su propia providencia, requerimiento o fallo judicial..." : "O redacta tu propia alegación procesal..."}
+                    className="w-full p-2 bg-[#F5F3EF] border border-slate-300 rounded-lg text-xs text-[#334155] placeholder-slate-400 focus:outline-none focus:border-[#243F5B] focus:bg-white resize-none"
                   />
                 </div>
 
                 {/* Indicador de Orador en Estrados mientras habla */}
                 {isSpeakingAudio && (
-                  <div className="p-2.5 rounded-xl bg-amber-950/60 border border-amber-500/40 text-xs text-amber-200 flex items-center justify-between shadow-md">
+                  <div className="p-2 rounded-xl bg-[#F5F3EF] border border-[#C5A15B]/50 text-xs text-[#14263D] flex items-center justify-between shadow-xs">
                     <div className="flex items-center space-x-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping shrink-0" />
-                      <span className="leading-tight text-[11px]">
+                      <span className="w-2 h-2 rounded-full bg-[#C5A15B] animate-ping shrink-0" />
+                      <span className="leading-tight text-[10.5px]">
                         <strong>{currentIntervention?.speaker_name}</strong> expone en estrados...
-                        {queueLength > 0 && <span className="text-amber-400 font-semibold ml-1">({queueLength} turno en espera)</span>}
+                        {queueLength > 0 && (
+                          <span className="text-[#243F5B] font-semibold ml-1">
+                            ({queueLength} en espera)
+                          </span>
+                        )}
                       </span>
                     </div>
                     {onSkipAudio && (
                       <button
                         onClick={onSkipAudio}
-                        className="px-2 py-0.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded text-[10px] font-bold border border-amber-500/40 shrink-0 cursor-pointer"
+                        className="px-2 py-0.5 bg-white hover:bg-slate-100 text-[#14263D] rounded text-[10px] font-bold border border-slate-300 shrink-0 cursor-pointer flex items-center space-x-1"
                       >
-                        Avanzar ⏭
+                        <span>Avanzar</span>
+                        <ArrowRight className="w-3 h-3" />
                       </button>
                     )}
                   </div>
                 )}
 
-                {/* Acciones de turno: Formular Objeción o Sostener Argumentación */}
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={onOpenObjection}
-                    disabled={loading || isSpeakingAudio}
-                    className="px-3 py-2 bg-red-950/70 hover:bg-red-900/80 disabled:opacity-50 text-red-300 font-bold rounded-lg text-xs border border-red-800 transition-colors flex items-center justify-center space-x-1 shadow-sm"
-                    title="Interponer objeción procesal en tiempo real"
-                  >
-                    <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
-                    <span>Objeción</span>
-                  </button>
+                {/* Acciones de turno: Formular Objeción / Apercibir o Pronunciar en Sala */}
+                <div className="flex items-center space-x-2 pt-0.5">
+                  {isJudge ? (
+                    <button
+                      onClick={() => {
+                        onChangeFreeText('El Tribunal previene a las partes sobre el deber de conducirse con estricta pertinencia y respeto a la sala, bajo apercibimiento procesal.');
+                        onSelectOptionId(null);
+                      }}
+                      disabled={loading || isSpeakingAudio}
+                      className="px-3 py-2 bg-[#243F5B] hover:bg-[#1C3554] disabled:opacity-50 text-[#C5A15B] font-bold rounded-lg text-xs transition-colors flex items-center justify-center space-x-1.5 shadow-xs cursor-pointer border border-[#C5A15B]/40"
+                      title="Apercibir a los letrados para mantener el orden procesal"
+                    >
+                      <Gavel className="w-3.5 h-3.5 text-[#C5A15B]" />
+                      <span>Apercibir</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={onOpenObjection}
+                      disabled={loading || isSpeakingAudio}
+                      className="px-3 py-2 bg-rose-700 hover:bg-rose-800 disabled:opacity-50 text-white font-bold rounded-lg text-xs transition-colors flex items-center justify-center space-x-1.5 shadow-xs cursor-pointer"
+                      title="Interponer objeción procesal en tiempo real"
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      <span>Objeción</span>
+                    </button>
+                  )}
 
                   <button
                     onClick={onSubmitDecision}
                     disabled={loading || isSpeakingAudio || (!selectedOptionId && !freeText.trim())}
-                    className="flex-1 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-stone-950 font-bold rounded-lg text-xs transition-colors flex items-center justify-center space-x-1.5 shadow-md"
+                    className="flex-1 py-2 bg-[#243F5B] hover:bg-[#1C3554] disabled:opacity-50 text-white font-bold rounded-lg text-xs transition-all flex items-center justify-center space-x-1.5 shadow-md cursor-pointer"
                   >
                     {loading ? (
-                      <span>Generando debate en sala...</span>
+                      <span>{isJudge ? 'Pronunciando resolución en sala...' : 'Procesando alegato en sala...'}</span>
                     ) : isSpeakingAudio ? (
-                      <span>Escuchando intervención en estrados...</span>
+                      <span>{isJudge ? 'Escuchando a las partes en estrados...' : 'Atendiendo comparecencia en estrados...'}</span>
                     ) : (
                       <>
-                        <span>Sostener en Audiencia</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
+                        <span>{isJudge ? 'Pronunciar en Sala' : 'Sostener en Audiencia'}</span>
+                        {isJudge ? <Gavel className="w-3.5 h-3.5 text-[#C5A15B]" /> : <ArrowRight className="w-3.5 h-3.5 text-[#C5A15B]" />}
                       </>
                     )}
                   </button>
@@ -490,12 +500,75 @@ export const CourtroomStep: React.FC<CourtroomStepProps> = ({
         {isTheaterMode && !showFloatingPanel && (
           <button
             onClick={() => setShowFloatingPanel(true)}
-            className="absolute right-4 bottom-4 z-25 p-3 rounded-full bg-amber-500 text-stone-950 font-bold shadow-2xl hover:bg-amber-400 transition-transform hover:scale-105 flex items-center space-x-2"
+            className="absolute right-4 bottom-4 z-30 p-3 rounded-full bg-[#243F5B] text-white font-bold shadow-2xl hover:bg-[#1C3554] border border-[#C5A15B]/50 transition-transform hover:scale-105 flex items-center space-x-2 cursor-pointer"
           >
-            <MessageSquare className="w-4 h-4" />
+            <MessageSquare className="w-4 h-4 text-[#C5A15B]" />
             <span className="text-xs">Abrir Debate</span>
           </button>
         )}
+      </div>
+
+      {/* ======================================================== */}
+      {/* BARRA DE ESTADOS DEL EXPEDIENTE (UBICADA ABAJO DE LOS DOS CARDS) */}
+      {/* ======================================================== */}
+      <div className="bg-[#14263D] border border-[#243F5B] rounded-2xl p-3.5 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0">
+        {/* Fases del Expediente */}
+        <div className="flex items-center space-x-1.5 sm:space-x-2.5 overflow-x-auto py-1">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-[#C5A15B] shrink-0 mr-1 hidden sm:inline">
+            Estados del Expediente:
+          </span>
+
+          {/* 1. Expediente Judicial */}
+          <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs bg-[#1C3554]/70 text-slate-300 border border-[#243F5B] shrink-0">
+            <CheckCircle2 className="w-3.5 h-3.5 text-[#C5A15B] shrink-0" />
+            <span className="text-[11px] font-medium">1. Expediente Judicial</span>
+          </div>
+
+          <ChevronRight className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+
+          {/* 2. Análisis Documental */}
+          <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs bg-[#1C3554]/70 text-slate-300 border border-[#243F5B] shrink-0">
+            <CheckCircle2 className="w-3.5 h-3.5 text-[#C5A15B] shrink-0" />
+            <span className="text-[11px] font-medium">2. Análisis Documental</span>
+          </div>
+
+          <ChevronRight className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+
+          {/* 3. Asignación de Rol */}
+          <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs bg-[#1C3554]/70 text-slate-300 border border-[#243F5B] shrink-0">
+            <CheckCircle2 className="w-3.5 h-3.5 text-[#C5A15B] shrink-0" />
+            <span className="text-[11px] font-medium">3. Asignación de Rol</span>
+          </div>
+
+          <ChevronRight className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+
+          {/* 4. Audiencia en Sala (FASE ACTIVA) */}
+          <div className="flex items-center space-x-2 px-3.5 py-1.5 rounded-xl text-xs bg-[#243F5B] text-white border border-[#C5A15B]/80 shadow-sm font-semibold shrink-0">
+            <Gavel className="w-3.5 h-3.5 text-[#C5A15B] shrink-0" />
+            <span className="text-[11px]">4. Audiencia en Sala</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+          </div>
+
+          <ChevronRight className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+
+          {/* 5. Sentencia y Fallo */}
+          <div className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs shrink-0 ${
+            simState.status === 'concluido'
+              ? 'bg-[#243F5B] text-white border border-[#C5A15B]'
+              : 'text-slate-500 bg-[#0F1E31]/50 border border-[#243F5B]/40'
+          }`}>
+            <Scale className={`w-3.5 h-3.5 shrink-0 ${simState.status === 'concluido' ? 'text-[#C5A15B]' : 'text-slate-500'}`} />
+            <span className="text-[11px]">5. Sentencia y Fallo</span>
+          </div>
+        </div>
+
+        {/* Etapa Específica de la Audiencia */}
+        <div className="flex items-center space-x-2 text-xs text-slate-300 md:pl-4 md:border-l md:border-[#243F5B] shrink-0">
+          <span className="text-[#C5A15B] font-semibold text-[11px]">Etapa Oral:</span>
+          <span className="px-2.5 py-1 rounded-lg bg-[#243F5B] text-white text-[11px] font-semibold uppercase tracking-wider border border-[#C5A15B]/30">
+            {simState.current_stage.replace(/_/g, ' ')}
+          </span>
+        </div>
       </div>
     </div>
   );

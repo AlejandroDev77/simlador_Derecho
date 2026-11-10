@@ -1,4 +1,4 @@
-export type Step = 'upload' | 'analysis' | 'role_select' | 'courtroom' | 'evaluation';
+export type Step = 'upload' | 'analysis' | 'role_select' | 'courtroom' | 'evaluation' | 'settings';
 
 export type LegalRole =
   | 'juez'

@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AlertCircle } from './components/Icons';
 import { Header } from './components/Header';
+import { Sidebar } from './components/Sidebar';
+import { SettingsStep } from './components/SettingsStep';
 import { UploadStep } from './components/UploadStep';
 import { AnalysisStep } from './components/AnalysisStep';
 import { RoleSelectStep } from './components/RoleSelectStep';
 import { CourtroomStep } from './components/CourtroomStep';
 import { ObjectionModal } from './components/ObjectionModal';
-import { VoiceSettingsModal } from './components/VoiceSettingsModal';
 import { EvaluationStep } from './components/EvaluationStep';
 import { playGavelStrike } from './utils/audio';
 import { caseService } from './services/caseService';
@@ -68,6 +69,7 @@ function resolveSpeakerVoice(
 
 export default function App() {
   const [currentStep, setCurrentStep] = useState<Step>('upload');
+  const [previousStep, setPreviousStep] = useState<Step>('upload');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -85,7 +87,6 @@ export default function App() {
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const [evaluation, setEvaluation] = useState<AcademicEvaluation | null>(null);
   const [showObjectionModal, setShowObjectionModal] = useState(false);
-  const [showVoiceModal, setShowVoiceModal] = useState(false);
 
   // Audio / TTS con Web Speech API y configuración personalizada
   const [ttsEnabled, setTtsEnabled] = useState(true);
@@ -120,6 +121,7 @@ export default function App() {
     }
     advanceToNextIntervention();
   };
+
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(() => {
     try {
       const saved = localStorage.getItem('simulador_voice_settings');
@@ -146,6 +148,19 @@ export default function App() {
       localStorage.setItem('simulador_voice_settings', JSON.stringify(newSettings));
     } catch {
       // Ignorar si localstorage no está disponible
+    }
+  };
+
+  const handleNavigateSettings = () => {
+    if (currentStep !== 'settings') {
+      setPreviousStep(currentStep);
+    }
+    setCurrentStep('settings');
+  };
+
+  const handleNavigateSimulation = () => {
+    if (currentStep === 'settings') {
+      setCurrentStep(previousStep || 'upload');
     }
   };
 
@@ -187,8 +202,9 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
       const file = new File([exampleText], 'Causa_Penal_142-2024_Estafa.txt', { type: 'text/plain' });
       const res = await caseService.uploadCase(file);
       setCaseFile(res);
+      setPreviousStep('analysis');
       setCurrentStep('analysis');
-      handleRunAnalysis(res.id);
+      await handleRunAnalysis(res.id);
     } catch (err: any) {
       setErrorMessage(err.message || 'Error al cargar el caso de ejemplo.');
     } finally {
@@ -264,7 +280,6 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
     };
 
     if (!ttsEnabled) {
-      // Si la locución de voz está apagada, dejar un tiempo prudente de lectura antes de pasar o activar turno
       const timer = setTimeout(() => {
         if (!isCancelled) advanceToNextIntervention();
       }, 4000);
@@ -275,7 +290,6 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
     }
 
     if (voiceSettings.engine === 'openai') {
-      // Detección adaptativa de voz por rol procesal y género
       const isFemale = currentIntervention.speaker_gender === 'female';
       const voice = resolveSpeakerVoice(
         currentIntervention.speaker_role,
@@ -357,8 +371,9 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
     try {
       const res = await caseService.uploadCase(file);
       setCaseFile(res);
+      setPreviousStep('analysis');
       setCurrentStep('analysis');
-      handleRunAnalysis(res.id);
+      await handleRunAnalysis(res.id);
     } catch (err: any) {
       setErrorMessage(err.message || 'Error al procesar el archivo del expediente.');
     } finally {
@@ -366,7 +381,7 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
     }
   };
 
-  // Ejecutar Análisis con OpenAI
+  // Ejecutar Análisis
   const handleRunAnalysis = async (cId: string) => {
     setLoading(true);
     setErrorMessage(null);
@@ -374,7 +389,7 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
       const res = await caseService.analyzeCase(cId);
       setAnalysis(res);
     } catch (err: any) {
-      setErrorMessage(err.message || 'Error en el análisis documental con OpenAI.');
+      setErrorMessage(err.message || 'Error en el análisis documental del expediente.');
     } finally {
       setLoading(false);
     }
@@ -392,6 +407,7 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
       setCurrentIntervention(res.initial_intervention);
       const stateRes = await simulationService.getSimulationState(res.session_id);
       setSimState(stateRes);
+      setPreviousStep('courtroom');
       setCurrentStep('courtroom');
     } catch (err: any) {
       setErrorMessage(err.message || 'Error al iniciar la audiencia.');
@@ -435,10 +451,13 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
         free_text_response: freeText.trim() || undefined
       });
 
-      // 1. Crear intervención del alumno para que su avatar pase al estrado central, hable y gesticule primero
+      // 1. Crear intervención del alumno
       const userRole = simState?.user_role || selectedRole;
+      const isJudge = userRole === 'juez';
       const userGender = res.user_intervention?.speaker_gender || 'male';
-      const roleLabel = userRole === 'abogado_demandante'
+      const roleLabel = isJudge
+        ? 'Magistrado Presidente'
+        : userRole === 'abogado_demandante'
         ? 'Letrado Acusación'
         : userRole === 'fiscal'
         ? 'Ministerio Fiscal'
@@ -448,14 +467,20 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
         ? 'Parte Demandante'
         : 'Parte Demandada';
 
+      const userModelKey = isJudge
+        ? 'juez1'
+        : (userRole === 'abogado_defensor' || userRole === 'abogado_demandado')
+        ? 'abogada1_mujer'
+        : 'abogado1_hombre';
+
       const userIntervention: Intervention = {
         id: res.user_intervention?.id || `user_inv_${Date.now()}`,
         speaker_role: userRole,
         speaker_name: `Tú (${roleLabel})`,
         stage: res.current_stage || simState?.current_stage || 'alegatos',
-        text: res.user_intervention?.text || freeText || 'Sostengo la argumentación conforme a las constancias de autos.',
+        text: res.user_intervention?.text || freeText || (isJudge ? 'El Tribunal dispone la prosecución de los autos conforme a derecho.' : 'Sostengo la argumentación conforme a las constancias de autos.'),
         is_user: true,
-        model_3d_key: 'persona1',
+        model_3d_key: userModelKey,
         speaker_gender: userGender,
         options: []
       };
@@ -493,6 +518,7 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
   const handleEvaluate = async () => {
     if (!sessionId) return;
     if (evaluation) {
+      setPreviousStep('evaluation');
       setCurrentStep('evaluation');
       return;
     }
@@ -501,9 +527,10 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
     try {
       const res = await simulationService.evaluateSimulation(sessionId);
       setEvaluation(res);
+      setPreviousStep('evaluation');
       setCurrentStep('evaluation');
     } catch (err: any) {
-      setErrorMessage(err.message || 'Error al emitir la evaluación académica.');
+      setErrorMessage(err.message || 'Error al emitir la evaluación pedagógica.');
     } finally {
       setLoading(false);
     }
@@ -520,14 +547,17 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
     setSelectedOptionId(null);
     setFreeText('');
     setErrorMessage(null);
+    setPreviousStep('upload');
     setCurrentStep('upload');
   };
 
   return (
-    <div className="flex flex-col h-screen bg-stone-950 text-stone-100 font-sans select-none antialiased">
-      {/* Barra de Navegación Superior */}
-      <Header
+    <div className="flex h-screen w-screen overflow-hidden bg-[#F5F3EF] text-[#334155] font-sans select-none antialiased">
+      {/* Barra Lateral Izquierda (Azul Noche #14263D) */}
+      <Sidebar
         currentStep={currentStep}
+        onNavigateSimulation={handleNavigateSimulation}
+        onNavigateSettings={handleNavigateSettings}
         ttsEnabled={ttsEnabled}
         onToggleTts={() => {
           if (ttsEnabled) {
@@ -543,100 +573,119 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
           setTtsEnabled(!ttsEnabled);
         }}
         onReset={handleReset}
+        isSimulating={Boolean(sessionId && currentStep !== 'evaluation')}
       />
 
-      {/* Alerta de Error si ocurre */}
-      {errorMessage && (
-        <div className="bg-red-950/80 border-b border-red-800 px-6 py-2.5 flex items-center justify-between text-xs text-red-200">
-          <div className="flex items-center space-x-2">
-            <AlertCircle className="w-4 h-4 text-red-400" />
-            <span>{errorMessage}</span>
+      {/* Contenedor Principal Derecho (Navbar + Main con Scroll Vertical) */}
+      <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0">
+        {/* Barra de Navegación Superior Limpia */}
+        <Header
+          currentStep={currentStep}
+          caseTitle={analysis?.case_number || caseFile?.filename}
+        />
+
+        {/* Alerta de Error si ocurre */}
+        {errorMessage && (
+          <div className="bg-red-50 border-b border-red-200 px-6 py-2.5 flex items-center justify-between text-xs text-red-800 shrink-0">
+            <div className="flex items-center space-x-2">
+              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+            <button
+              onClick={() => setErrorMessage(null)}
+              className="underline hover:text-red-950 cursor-pointer"
+            >
+              Cerrar
+            </button>
           </div>
-          <button onClick={() => setErrorMessage(null)} className="underline hover:text-white">
-            Cerrar
-          </button>
-        </div>
-      )}
-
-      {/* Contenido Principal modularizado según el paso activo */}
-      <main className={`flex-1 flex flex-col ${currentStep === 'courtroom' ? 'p-2 sm:p-3' : 'p-4 sm:p-6'} overflow-hidden`}>
-        {currentStep === 'upload' && (
-          <UploadStep
-            loading={loading}
-            onFileUpload={handleFileUpload}
-            onLoadExample={handleLoadExampleCase}
-          />
         )}
 
-        {currentStep === 'analysis' && (
-          <AnalysisStep
-            caseFile={caseFile}
-            analysis={analysis}
-            loading={loading}
-            onContinue={() => setCurrentStep('role_select')}
-          />
-        )}
-
-        {currentStep === 'role_select' && (
-          <RoleSelectStep
-            selectedRole={selectedRole}
-            onSelectRole={setSelectedRole}
-            loading={loading}
-            onStartSimulation={handleStartSimulation}
-          />
-        )}
-
-        {currentStep === 'courtroom' && simState && (
-          <>
-            <CourtroomStep
-              simState={simState}
-              currentIntervention={currentIntervention}
-              isSpeakingAudio={isSpeakingAudio}
-              ttsEnabled={ttsEnabled}
-              onToggleTts={() => {
-                if (ttsEnabled) {
-                  window.speechSynthesis?.cancel();
-                  setIsSpeakingAudio(false);
-                }
-                setTtsEnabled(!ttsEnabled);
-              }}
-              onOpenVoiceSettings={() => setShowVoiceModal(true)}
-              showDossier={showDossier}
-              onToggleDossier={() => setShowDossier(!showDossier)}
-              onEvaluate={handleEvaluate}
-              selectedOptionId={selectedOptionId}
-              onSelectOptionId={setSelectedOptionId}
-              freeText={freeText}
-              onChangeFreeText={setFreeText}
-              onSubmitDecision={handleSubmitDecision}
-              onOpenObjection={() => setShowObjectionModal(true)}
+        {/* Contenido Principal con Scroll Vertical (overflow-y-auto) */}
+        <main className={`flex-1 flex flex-col ${currentStep === 'courtroom' ? 'p-2 sm:p-4 pb-8' : 'p-4 sm:p-6'} overflow-y-auto min-h-0`}>
+          {currentStep === 'upload' && (
+            <UploadStep
               loading={loading}
-              onSkipAudio={handleSkipAudio}
-              queueLength={interventionQueue.length}
+              onFileUpload={handleFileUpload}
+              onLoadExample={handleLoadExampleCase}
             />
+          )}
 
-            <ObjectionModal
-              isOpen={showObjectionModal}
-              onClose={() => setShowObjectionModal(false)}
-              onSelectGrounds={handleRaiseObjection}
+          {currentStep === 'analysis' && (
+            <AnalysisStep
+              caseFile={caseFile}
+              analysis={analysis}
+              loading={loading}
+              onContinue={() => {
+                setPreviousStep('role_select');
+                setCurrentStep('role_select');
+              }}
             />
+          )}
 
-            <VoiceSettingsModal
-              isOpen={showVoiceModal}
-              onClose={() => setShowVoiceModal(false)}
+          {currentStep === 'role_select' && (
+            <RoleSelectStep
+              selectedRole={selectedRole}
+              onSelectRole={setSelectedRole}
+              loading={loading}
+              onStartSimulation={handleStartSimulation}
+            />
+          )}
+
+          {currentStep === 'courtroom' && simState && (
+            <>
+              <CourtroomStep
+                simState={simState}
+                currentIntervention={currentIntervention}
+                isSpeakingAudio={isSpeakingAudio}
+                ttsEnabled={ttsEnabled}
+                onToggleTts={() => {
+                  if (ttsEnabled) {
+                    window.speechSynthesis?.cancel();
+                    setIsSpeakingAudio(false);
+                  }
+                  setTtsEnabled(!ttsEnabled);
+                }}
+                onOpenVoiceSettings={handleNavigateSettings}
+                showDossier={showDossier}
+                onToggleDossier={() => setShowDossier(!showDossier)}
+                onEvaluate={handleEvaluate}
+                selectedOptionId={selectedOptionId}
+                onSelectOptionId={setSelectedOptionId}
+                freeText={freeText}
+                onChangeFreeText={setFreeText}
+                onSubmitDecision={handleSubmitDecision}
+                onOpenObjection={() => setShowObjectionModal(true)}
+                loading={loading}
+                onSkipAudio={handleSkipAudio}
+                queueLength={interventionQueue.length}
+              />
+
+              <ObjectionModal
+                isOpen={showObjectionModal}
+                onClose={() => setShowObjectionModal(false)}
+                onSelectGrounds={handleRaiseObjection}
+              />
+            </>
+          )}
+
+          {currentStep === 'evaluation' && evaluation && (
+            <EvaluationStep
+              evaluation={evaluation}
+              onReset={handleReset}
+            />
+          )}
+
+          {currentStep === 'settings' && (
+            <SettingsStep
               settings={voiceSettings}
               onSaveSettings={handleSaveVoiceSettings}
+              onReturnToSimulation={handleNavigateSimulation}
+              onResetSimulation={handleReset}
+              isSimulating={Boolean(sessionId && currentStep !== 'evaluation')}
             />
-          </>
-        )}
-
-        {currentStep === 'evaluation' && evaluation && (
-          <EvaluationStep
-            evaluation={evaluation}
-            onReset={handleReset}
-          />
-        )}
-      </main>
+          )}
+        </main>
+      </div>
     </div>
   );
 }

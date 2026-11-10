@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { Volume2, Sparkles, Sun, Moon } from './Icons';
+import { Volume2, Sparkles, Sun, Moon, Camera, Scale, Shield, User, Eye, Compass } from './Icons';
 
 interface Courtroom3DProps {
   currentSpeakerRole?: string;
@@ -444,17 +444,17 @@ export const Courtroom3D: React.FC<Courtroom3DProps> = ({
           });
         };
 
-        // Carga simultánea de los 5 personajes:
-        // 1. Juez: juez1.glb
-        // 2. Abogado Demandante / Fiscal: juez1.glb
-        // 3. Demandante: persona1.glb
-        // 4. Abogado Defensor: juez1.glb
-        // 5. Demandado: per2.glb
+        // Carga simultánea de los 5 personajes con modelos únicos:
+        // 1. Tribunal / Magistrado-Juez: juez1.glb
+        // 2. Abogado Demandante / Acusación: abogado1_hombre.glb
+        // 3. Parte Demandante / Actor: persona1.glb
+        // 4. Abogada Defensora: abogada1_mujer.glb
+        // 5. Parte Acusada / Demandado: per2.glb
         Promise.all([
           loadCharacter('/models/juez1.glb', basePositions.judge, 1.75, 0),
-          loadCharacter('/models/juez1.glb', basePositions.lawyerPlaintiff, 1.75, 0.45),
+          loadCharacter('/models/abogado1_hombre.glb', basePositions.lawyerPlaintiff, 1.75, 0.45),
           loadCharacter('/models/persona1.glb', basePositions.plaintiff, 1.72, 0.35),
-          loadCharacter('/models/juez1.glb', basePositions.lawyerDefendant, 1.75, -0.45),
+          loadCharacter('/models/abogada1_mujer.glb', basePositions.lawyerDefendant, 1.75, -0.45),
           loadCharacter('/models/per2.glb', basePositions.defendant, 1.72, -0.35)
         ]).then(([jMesh, lpMesh, pMesh, ldMesh, dMesh]) => {
           if (isDisposed) return;
@@ -854,106 +854,111 @@ export const Courtroom3D: React.FC<Courtroom3DProps> = ({
 
       {/* Controles Superiores Derechos: Iluminación y Ángulos de Cámara */}
       <div className="absolute top-3.5 right-3.5 flex items-center space-x-2 z-10">
-        {/* Toggle de Iluminación Suave / Brillante */}
+        {/* Toggle de Iluminación de Sala */}
         <button
           onClick={() => setBrightLighting(!brightLighting)}
-          className={`p-2 rounded-xl border backdrop-blur-md transition-all shadow-lg flex items-center space-x-1 text-xs font-semibold ${
+          className={`p-2 rounded-xl border backdrop-blur-md transition-all shadow-md flex items-center space-x-1.5 text-xs font-semibold cursor-pointer ${
             brightLighting
-              ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
-              : 'bg-stone-900/80 border-stone-700 text-stone-400 hover:text-stone-200'
+              ? 'bg-[#14263D]/90 border-[#C5A15B]/50 text-[#C5A15B]'
+              : 'bg-[#14263D]/80 border-[#243F5B] text-slate-300 hover:text-white'
           }`}
           title={brightLighting ? 'Iluminación Clara' : 'Iluminación Suave'}
         >
-          {brightLighting ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-stone-400" />}
+          {brightLighting ? <Sun className="w-4 h-4 text-[#C5A15B]" /> : <Moon className="w-4 h-4 text-slate-400" />}
           <span className="hidden sm:inline">{brightLighting ? 'Luz Clara' : 'Luz Suave'}</span>
         </button>
 
         {/* Selector de Ángulos de Cámara */}
-        <div className="flex items-center space-x-1 bg-stone-900/85 backdrop-blur-md p-1 rounded-xl border border-stone-700/80 shadow-xl">
+        <div className="flex items-center space-x-1 bg-[#14263D]/90 backdrop-blur-md p-1 rounded-xl border border-[#243F5B] shadow-lg">
           <button
             onClick={() => handleSelectPreset('auto')}
-            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1 ${
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5 cursor-pointer ${
               activePreset === 'auto'
-                ? 'bg-amber-500 text-stone-950 shadow-md'
-                : 'text-stone-300 hover:text-white hover:bg-stone-800'
+                ? 'bg-[#C5A15B] text-[#14263D] shadow-sm font-bold'
+                : 'text-slate-200 hover:text-white hover:bg-[#243F5B]'
             }`}
-            title="Auto-director cinematográfico: enfoca automáticamente a quien habla"
+            title="Auto-director procesal: enfoca automáticamente al orador activo"
           >
-            <span>🎬</span>
-            <span className="hidden md:inline">Auto-Director</span>
+            <Camera className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">Enfoque Automático</span>
           </button>
 
           <button
             onClick={() => handleSelectPreset('general')}
-            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5 cursor-pointer ${
               activePreset === 'general'
-                ? 'bg-amber-500 text-stone-950 shadow-md'
-                : 'text-stone-300 hover:text-white hover:bg-stone-800'
+                ? 'bg-[#C5A15B] text-[#14263D] shadow-sm font-bold'
+                : 'text-slate-200 hover:text-white hover:bg-[#243F5B]'
             }`}
-            title="Vista panorámica de toda la sala"
+            title="Vista panorámica de la Sala"
           >
-            🏛️ <span className="hidden lg:inline">General</span>
+            <Compass className="w-3.5 h-3.5" />
+            <span className="hidden lg:inline">Sala General</span>
           </button>
 
           <button
             onClick={() => handleSelectPreset('judge')}
-            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5 cursor-pointer ${
               activePreset === 'judge'
-                ? 'bg-amber-500 text-stone-950 shadow-md'
-                : 'text-stone-300 hover:text-white hover:bg-stone-800'
+                ? 'bg-[#C5A15B] text-[#14263D] shadow-sm font-bold'
+                : 'text-slate-200 hover:text-white hover:bg-[#243F5B]'
             }`}
-            title="Plano del Tribunal / Magistrado"
+            title="Estrado del Tribunal / Magistrado"
           >
-            ⚖️ <span className="hidden lg:inline">Juez</span>
+            <Scale className="w-3.5 h-3.5" />
+            <span className="hidden lg:inline">Tribunal</span>
           </button>
 
           <button
             onClick={() => handleSelectPreset('plaintiff')}
-            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5 cursor-pointer ${
               activePreset === 'plaintiff'
-                ? 'bg-amber-500 text-stone-950 shadow-md'
-                : 'text-stone-300 hover:text-white hover:bg-stone-800'
+                ? 'bg-[#C5A15B] text-[#14263D] shadow-sm font-bold'
+                : 'text-slate-200 hover:text-white hover:bg-[#243F5B]'
             }`}
             title="Mesa de la Acusación"
           >
-            💼 <span className="hidden lg:inline">Acusación</span>
+            <User className="w-3.5 h-3.5" />
+            <span className="hidden lg:inline">Acusación</span>
           </button>
 
           <button
             onClick={() => handleSelectPreset('defendant')}
-            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5 cursor-pointer ${
               activePreset === 'defendant'
-                ? 'bg-amber-500 text-stone-950 shadow-md'
-                : 'text-stone-300 hover:text-white hover:bg-stone-800'
+                ? 'bg-[#C5A15B] text-[#14263D] shadow-sm font-bold'
+                : 'text-slate-200 hover:text-white hover:bg-[#243F5B]'
             }`}
             title="Mesa de la Defensa"
           >
-            🛡️ <span className="hidden lg:inline">Defensa</span>
+            <Shield className="w-3.5 h-3.5" />
+            <span className="hidden lg:inline">Defensa</span>
           </button>
 
           <button
             onClick={() => handleSelectPreset('first_person')}
-            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5 cursor-pointer ${
               activePreset === 'first_person'
-                ? 'bg-amber-500 text-stone-950 shadow-md'
-                : 'text-stone-300 hover:text-white hover:bg-stone-800'
+                ? 'bg-[#C5A15B] text-[#14263D] shadow-sm font-bold'
+                : 'text-slate-200 hover:text-white hover:bg-[#243F5B]'
             }`}
-            title="Perspectiva en primera persona desde tu asiento procesal"
+            title="Perspectiva subjetiva desde tu posición procesal"
           >
-            👁️ <span className="hidden sm:inline">Mi Rol</span>
+            <Eye className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Mi Posición</span>
           </button>
         </div>
       </div>
 
-      {/* Guía de Controles y Navegación Libre (WASD / Ratón) */}
-      <div className="absolute bottom-3 left-3 bg-stone-900/85 backdrop-blur-md px-3 py-1.5 rounded-xl border border-stone-700/80 text-[11px] text-stone-300 pointer-events-none z-10 flex items-center space-x-3 shadow-lg">
-        <span>🎮 <strong>W/A/S/D</strong>: Caminar</span>
+      {/* Guía de Controles y Navegación Libre */}
+      <div className="absolute bottom-3 left-3 bg-[#14263D]/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-[#243F5B] text-[11px] text-slate-300 pointer-events-none z-10 flex items-center space-x-3 shadow-lg">
+        <span><strong>W/A/S/D</strong>: Desplazamiento</span>
         <span>•</span>
-        <span><strong>Q/E</strong>: Elevar</span>
+        <span><strong>Q/E</strong>: Altura</span>
         <span>•</span>
         <span><strong>Arrastrar</strong>: Orbitar 360°</span>
         <span>•</span>
-        <span><strong>Rueda</strong>: Zoom</span>
+        <span><strong>Rueda</strong>: Distancia focal</span>
       </div>
     </div>
   );

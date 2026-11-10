@@ -162,37 +162,72 @@ def start_simulation(
     db.commit()
     db.refresh(session)
 
-    # Localizar al Juez para que abra la audiencia
-    juez_participant = next(
-        (p for p in analysis.identified_participants if p.role == LegalRole.JUEZ),
-        Participant(
-            id="juez_default",
-            name="Juez Presidente",
-            role=LegalRole.JUEZ,
-            description="Presidencia del tribunal",
-            model_3d_key="juez1"
+    # Si el usuario es el Juez, el Letrado de la Administración de Justicia / Secretario
+    # constituye formalmente la sala y el alumno (Juez) recibe las directivas para abrir la sesión
+    if input_data.user_role == LegalRole.JUEZ:
+        fact_ref = analysis.facts[0].description if analysis.facts else "los hechos controvertidos"
+        initial_judge_options = [
+            {
+                "id": "opt_juez_open_1",
+                "text": "Se declara formalmente abierta la sesión de audiencia ordinaria. Concedo la palabra a la representación letrada de la acusación para que exponga sus alegatos iniciales.",
+                "legal_tactic": "Apertura y turno a la acusación",
+                "risk_level": "bajo"
+            },
+            {
+                "id": "opt_juez_open_2",
+                "text": "Abierta la sesión pública. Con carácter previo a las alegaciones de fondo, consulto a las partes si existe posibilidad de acuerdo o cuestiones procesales previas que resolver.",
+                "legal_tactic": "Cuestiones previas y avenencia",
+                "risk_level": "medio"
+            },
+            {
+                "id": "opt_juez_open_3",
+                "text": f"Se declara abierto el juicio. Exhorto a los letrados a ceñirse con concisión a {fact_ref} y apercibo contra digresiones impertinentes. Tiene la palabra la acusación.",
+                "legal_tactic": "Dirección rigurosa de sala",
+                "risk_level": "alto"
+            }
+        ]
+        opening_intervention = InterventionModel(
+            session_id=session.id,
+            speaker_role="secretario",
+            speaker_name="Secretaría del Tribunal",
+            stage=ProceduralStage.APERTURA.value,
+            text=f"En la Sala de Vistas se constituye el Tribunal en audiencia pública para la vista del juicio. Comparecen las partes en estrados. Preside la sesión su Señoría.",
+            is_user=False,
+            model_3d_key="juez1",
+            options=initial_judge_options
         )
-    )
+    else:
+        # Localizar al Juez para que abra la audiencia
+        juez_participant = next(
+            (p for p in analysis.identified_participants if p.role == LegalRole.JUEZ),
+            Participant(
+                id="juez_default",
+                name="Juez Presidente",
+                role=LegalRole.JUEZ,
+                description="Presidencia del tribunal",
+                model_3d_key="juez1"
+            )
+        )
 
-    # Generar la intervención de apertura del juez
-    turn_data = llm_service.generate_dialogue_turn(
-        case_analysis=analysis,
-        history=[],
-        stage=ProceduralStage.APERTURA,
-        user_role=input_data.user_role,
-        active_speaker=juez_participant
-    )
+        # Generar la intervención de apertura del juez
+        turn_data = llm_service.generate_dialogue_turn(
+            case_analysis=analysis,
+            history=[],
+            stage=ProceduralStage.APERTURA,
+            user_role=input_data.user_role,
+            active_speaker=juez_participant
+        )
 
-    opening_intervention = InterventionModel(
-        session_id=session.id,
-        speaker_role=juez_participant.role.value,
-        speaker_name=juez_participant.name,
-        stage=ProceduralStage.APERTURA.value,
-        text=turn_data.get("text", "Se declara abierta la presente audiencia judicial. Las partes procederán con sus alegatos iniciales."),
-        is_user=False,
-        model_3d_key=juez_participant.model_3d_key,
-        options=turn_data.get("options_for_user", [])
-    )
+        opening_intervention = InterventionModel(
+            session_id=session.id,
+            speaker_role=juez_participant.role.value,
+            speaker_name=juez_participant.name,
+            stage=ProceduralStage.APERTURA.value,
+            text=turn_data.get("text", "Se declara abierta la presente audiencia judicial. Las partes procederán con sus alegatos iniciales."),
+            is_user=False,
+            model_3d_key=juez_participant.model_3d_key,
+            options=turn_data.get("options_for_user", [])
+        )
     db.add(opening_intervention)
     db.commit()
     db.refresh(opening_intervention)
@@ -284,10 +319,13 @@ def submit_decision(
     # 1. Determinar el texto del usuario
     user_text = submission.free_text_response
     if submission.selected_option_id and session.interventions:
-        last_options = session.interventions[-1].options or []
-        for opt in last_options:
-            if opt.get("id") == submission.selected_option_id:
-                user_text = opt.get("text")
+        for inv in reversed(session.interventions):
+            if inv.options:
+                for opt in inv.options:
+                    if opt.get("id") == submission.selected_option_id:
+                        user_text = opt.get("text")
+                        break
+            if user_text:
                 break
 
     if not user_text:
@@ -299,15 +337,19 @@ def submit_decision(
     if submission.free_text_response:
         is_faithful, fidelity_notes = llm_service.check_user_fidelity(case_analysis, submission.free_text_response)
 
+    is_judge = (session.user_role == LegalRole.JUEZ.value)
+    user_name = "Tú (Magistrado Presidente)" if is_judge else "Usuario (Tú)"
+    user_model_key = "juez1" if is_judge else ("abogada1_mujer" if session.user_role == LegalRole.ABOGADO_DEMANDADO.value else "abogado1_hombre")
+
     # Guardar intervención del usuario
     user_intervention = InterventionModel(
         session_id=session.id,
         speaker_role=session.user_role,
-        speaker_name="Usuario (Tú)",
+        speaker_name=user_name,
         stage=session.current_stage,
         text=user_text,
         is_user=True,
-        model_3d_key="persona1",
+        model_3d_key=user_model_key,
         options=[]
     )
     db.add(user_intervention)
@@ -318,7 +360,7 @@ def submit_decision(
         stage=session.current_stage,
         selected_option_id=submission.selected_option_id,
         free_text_response=submission.free_text_response,
-        legal_consequence="Intervención registrada y ponderada en el debate procesal." if is_faithful else f"Apercibimiento por falta de fidelidad: {fidelity_notes}",
+        legal_consequence="Resolución judicial registrada en autos." if is_judge else ("Intervención registrada y ponderada en el debate procesal." if is_faithful else f"Apercibimiento por falta de fidelidad: {fidelity_notes}"),
         fidelity_valid=is_faithful,
         fidelity_notes=fidelity_notes
     )
@@ -347,21 +389,36 @@ def submit_decision(
         Participant(id="juez_1", name="Juez Presidente del Tribunal", role=LegalRole.JUEZ, description="Magistrado a cargo de la sala", model_3d_key="juez1", gender="male")
     )
 
-    is_user_plaintiff_side = ("demandante" in session.user_role or "fiscal" in session.user_role)
-
-    # Localizar abogado de la contraparte
-    opposing_lawyer = next(
+    plaintiff_lawyer = next(
         (p for p in case_analysis.identified_participants if (
-            p.role in (LegalRole.ABOGADO_DEMANDADO, LegalRole.DEMANDADO) if is_user_plaintiff_side
-            else p.role in (LegalRole.ABOGADO_DEMANDANTE, LegalRole.FISCAL, LegalRole.DEMANDANTE)
-        ) and "abogado" in p.role.value),
-        None
+            p.role in (LegalRole.ABOGADO_DEMANDANTE, LegalRole.FISCAL)
+        )),
+        Participant(
+            id="abogado_acusacion",
+            name="Letrado de la Acusación",
+            role=LegalRole.ABOGADO_DEMANDANTE,
+            description="Abogado de la parte actora",
+            model_3d_key="abogado1_hombre",
+            gender="male"
+        )
     )
-    if not opposing_lawyer:
-        if is_user_plaintiff_side:
-            opposing_lawyer = Participant(id="abogado_defensa", name="Letrado de la Defensa", role=LegalRole.ABOGADO_DEMANDADO, description="Abogado defensor de la contraparte", model_3d_key="juez1", gender="male")
-        else:
-            opposing_lawyer = Participant(id="abogado_acusacion", name="Ministerio Fiscal / Letrado Actor", role=LegalRole.ABOGADO_DEMANDANTE, description="Abogado de la acusación", model_3d_key="juez1", gender="female")
+
+    defense_lawyer = next(
+        (p for p in case_analysis.identified_participants if (
+            p.role in (LegalRole.ABOGADO_DEMANDADO, LegalRole.DEMANDADO) and "abogado" in p.role.value
+        )),
+        Participant(
+            id="abogada_defensa",
+            name="Letrada de la Defensa",
+            role=LegalRole.ABOGADO_DEMANDADO,
+            description="Abogada defensora",
+            model_3d_key="abogada1_mujer",
+            gender="female"
+        )
+    )
+
+    is_user_plaintiff_side = ("demandante" in session.user_role or "fiscal" in session.user_role)
+    opposing_lawyer = defense_lawyer if is_user_plaintiff_side else plaintiff_lawyer
 
     # Localizar parte representada (demandado/acusado o demandante)
     represented_party = next(
@@ -379,8 +436,6 @@ def submit_decision(
     )
 
     # 4. Generar secuencia coral de intervenciones
-    # En un juicio real: Si la etapa es de pruebas, la parte/acusado declara; en alegatos, el abogado contrario replica.
-    # Tras ello, el Juez modera y concede el turno al alumno.
     interventions_to_return = []
     history_for_llm = [
         {
@@ -395,147 +450,243 @@ def submit_decision(
     is_concluded = False
     evaluation_data = None
 
-    if current_stage_enum == ProceduralStage.DELIBERACION_SENTENCIA:
-        # En sentencia, interviene directamente el Juez con el fallo solemne y definitivo
-        turn_juez = llm_service.generate_dialogue_turn(
-            case_analysis=case_analysis,
-            history=history_for_llm,
-            stage=current_stage_enum,
-            user_role=LegalRole(session.user_role),
-            active_speaker=juez_p
-        )
-        inv_juez = InterventionModel(
-            session_id=session.id,
-            speaker_role=juez_p.role.value,
-            speaker_name=juez_p.name,
-            stage=ProceduralStage.DELIBERACION_SENTENCIA.value,
-            text=turn_juez.get("text", "Visto para sentencia. El Tribunal dicta su resolución definitiva y declara formalmente concluida la sesión."),
-            is_user=False,
-            model_3d_key=juez_p.model_3d_key,
-            options=[]  # Sin más opciones: el juicio ha concluido solemnemente
-        )
-        db.add(inv_juez)
-
-        # Transición oficial de la simulación a CONCLUIDO
-        session.current_stage = ProceduralStage.CONCLUIDO.value
-        session.status = SimulationStatus.CONCLUIDO.value
-        db.commit()
-        db.refresh(inv_juez)
-        interventions_to_return.append(inv_juez)
-        is_concluded = True
-
-        # Generar de inmediato la evaluación pedagógica y fundamentación real de la sentencia
-        try:
-            history_eval = [
-                {
-                    "speaker_name": i.speaker_name,
-                    "text": i.text,
-                    "is_user": i.is_user,
-                    "stage": i.stage
-                } for i in session.interventions
-            ]
-            decisions_eval = [
-                {
-                    "stage": d.stage,
-                    "option": d.selected_option_id,
-                    "free_text": d.free_text_response
-                } for d in session.decisions
-            ]
-            eval_result = llm_service.evaluate_simulation(
-                case_analysis=case_analysis,
-                history=history_eval,
-                decisions=decisions_eval,
-                user_role=LegalRole(session.user_role)
+    if is_judge:
+        # ========================================================
+        # FLUJO ESPECIALIZADO: EL ALUMNO ES EL MAGISTRADO PRESIDENTE
+        # ========================================================
+        if current_stage_enum == ProceduralStage.DELIBERACION_SENTENCIA:
+            # El usuario Juez acaba de dictar el fallo judicial definitivo en estrados
+            inv_secretario = InterventionModel(
+                session_id=session.id,
+                speaker_role="secretario",
+                speaker_name="Secretaría del Tribunal",
+                stage=ProceduralStage.DELIBERACION_SENTENCIA.value,
+                text="El Tribunal ha dictado formalmente la Sentencia Judicial en estrados. Queda registrado el Fallo definitivo en autos y formalmente concluida la vista oral.",
+                is_user=False,
+                model_3d_key="juez1",
+                options=[]
             )
-
-            # Guardar o actualizar registro de evaluación en base de datos
-            existing_eval = db.query(AcademicEvaluationModel).filter(AcademicEvaluationModel.session_id == session.id).first()
-            if not existing_eval:
-                eval_model = AcademicEvaluationModel(
-                    session_id=session.id,
-                    academic_disclaimer=eval_result.academic_disclaimer,
-                    verdict=eval_result.verdict,
-                    ruling_summary=eval_result.ruling_summary,
-                    score_coherence=eval_result.score_coherence,
-                    score_fidelity_to_facts=eval_result.score_fidelity_to_facts,
-                    score_evidence_usage=eval_result.score_evidence_usage,
-                    final_feedback=eval_result.final_feedback,
-                    strengths=eval_result.strengths,
-                    areas_for_improvement=eval_result.areas_for_improvement
-                )
-                db.add(eval_model)
-            else:
-                existing_eval.verdict = eval_result.verdict
-                existing_eval.ruling_summary = eval_result.ruling_summary
-                existing_eval.score_coherence = eval_result.score_coherence
-                existing_eval.score_fidelity_to_facts = eval_result.score_fidelity_to_facts
-                existing_eval.score_evidence_usage = eval_result.score_evidence_usage
-                existing_eval.final_feedback = eval_result.final_feedback
-                existing_eval.strengths = eval_result.strengths
-                existing_eval.areas_for_improvement = eval_result.areas_for_improvement
+            db.add(inv_secretario)
+            session.current_stage = ProceduralStage.CONCLUIDO.value
+            session.status = SimulationStatus.CONCLUIDO.value
             db.commit()
-            evaluation_data = eval_result.model_dump()
-        except Exception as e:
-            print(f"Aviso: Generación de evaluación diferida: {e}")
+            db.refresh(inv_secretario)
+            interventions_to_return.append(inv_secretario)
+            is_concluded = True
+
+            # Evaluación académica inmediata de la dirección judicial
+            try:
+                history_eval = [
+                    {"speaker_name": i.speaker_name, "text": i.text, "is_user": i.is_user, "stage": i.stage}
+                    for i in session.interventions
+                ]
+                decisions_eval = [
+                    {"stage": d.stage, "option": d.selected_option_id, "free_text": d.free_text_response}
+                    for d in session.decisions
+                ]
+                eval_result = llm_service.evaluate_simulation(
+                    case_analysis=case_analysis,
+                    history=history_eval,
+                    decisions=decisions_eval,
+                    user_role=LegalRole.JUEZ
+                )
+                existing_eval = db.query(AcademicEvaluationModel).filter(AcademicEvaluationModel.session_id == session.id).first()
+                if not existing_eval:
+                    eval_model = AcademicEvaluationModel(
+                        session_id=session.id,
+                        academic_disclaimer=eval_result.academic_disclaimer,
+                        verdict=eval_result.verdict,
+                        ruling_summary=eval_result.ruling_summary,
+                        score_coherence=eval_result.score_coherence,
+                        score_fidelity_to_facts=eval_result.score_fidelity_to_facts,
+                        score_evidence_usage=eval_result.score_evidence_usage,
+                        final_feedback=eval_result.final_feedback,
+                        strengths=eval_result.strengths,
+                        areas_for_improvement=eval_result.areas_for_improvement
+                    )
+                    db.add(eval_model)
+                else:
+                    existing_eval.verdict = eval_result.verdict
+                    existing_eval.ruling_summary = eval_result.ruling_summary
+                    existing_eval.score_coherence = eval_result.score_coherence
+                    existing_eval.score_fidelity_to_facts = eval_result.score_fidelity_to_facts
+                    existing_eval.score_evidence_usage = eval_result.score_evidence_usage
+                    existing_eval.final_feedback = eval_result.final_feedback
+                    existing_eval.strengths = eval_result.strengths
+                    existing_eval.areas_for_improvement = eval_result.areas_for_improvement
+                db.commit()
+                evaluation_data = eval_result.model_dump()
+            except Exception as e:
+                print(f"Aviso: Generación de evaluación diferida: {e}")
+        else:
+            # En etapas activas, comparece el letrado o declarante respondiendo directamente a su Señoría
+            recent_speakers = [
+                i.speaker_role for i in session.interventions
+                if not i.is_user and i.speaker_role != "secretario"
+            ]
+            last_lawyer_role = recent_speakers[-1] if recent_speakers else None
+
+            if current_stage_enum == ProceduralStage.DESAHOGO_PRUEBAS and len(session.interventions) % 3 == 0:
+                speaker_now = represented_party
+            elif last_lawyer_role in (LegalRole.ABOGADO_DEMANDANTE.value, LegalRole.FISCAL.value):
+                speaker_now = defense_lawyer
+            else:
+                speaker_now = plaintiff_lawyer
+
+            turn_lawyer = llm_service.generate_dialogue_turn(
+                case_analysis=case_analysis,
+                history=history_for_llm,
+                stage=current_stage_enum,
+                user_role=LegalRole.JUEZ,
+                active_speaker=speaker_now
+            )
+            reply_text = turn_lawyer.get("text", "Con la venia de su Señoría, esta parte sostiene sus alegatos conforme a los autos.")
+
+            inv_speaker = InterventionModel(
+                session_id=session.id,
+                speaker_role=speaker_now.role.value,
+                speaker_name=speaker_now.name,
+                stage=session.current_stage,
+                text=reply_text,
+                is_user=False,
+                model_3d_key=speaker_now.model_3d_key,
+                options=turn_lawyer.get("options_for_user", [])
+            )
+            db.add(inv_speaker)
+            db.commit()
+            db.refresh(inv_speaker)
+            interventions_to_return.append(inv_speaker)
     else:
-        # Paso 4.1: Contraparte interviene (abogado o parte material)
-        first_speaker = represented_party if (current_stage_enum == ProceduralStage.DESAHOGO_PRUEBAS and len(session.interventions) % 3 == 0) else opposing_lawyer
+        # ========================================================
+        # FLUJO CUANDO EL USUARIO ES UN LETRADO LITIGANTE
+        # ========================================================
+        if current_stage_enum == ProceduralStage.DELIBERACION_SENTENCIA:
+            turn_juez = llm_service.generate_dialogue_turn(
+                case_analysis=case_analysis,
+                history=history_for_llm,
+                stage=current_stage_enum,
+                user_role=LegalRole(session.user_role),
+                active_speaker=juez_p
+            )
+            inv_juez = InterventionModel(
+                session_id=session.id,
+                speaker_role=juez_p.role.value,
+                speaker_name=juez_p.name,
+                stage=ProceduralStage.DELIBERACION_SENTENCIA.value,
+                text=turn_juez.get("text", "Visto para sentencia. El Tribunal dicta su resolución definitiva y declara formalmente concluida la sesión."),
+                is_user=False,
+                model_3d_key=juez_p.model_3d_key,
+                options=[]
+            )
+            db.add(inv_juez)
+            session.current_stage = ProceduralStage.CONCLUIDO.value
+            session.status = SimulationStatus.CONCLUIDO.value
+            db.commit()
+            db.refresh(inv_juez)
+            interventions_to_return.append(inv_juez)
+            is_concluded = True
 
-        turn_first = llm_service.generate_dialogue_turn(
-            case_analysis=case_analysis,
-            history=history_for_llm,
-            stage=current_stage_enum,
-            user_role=LegalRole(session.user_role),
-            active_speaker=first_speaker
-        )
-        reply_text = turn_first.get("text", "La contraparte sostiene su oposición.")
-        if not is_faithful and fidelity_notes:
-            reply_text = f"¡Objeción por falta de rigor fáctico! {fidelity_notes}.\n\n{reply_text}"
+            try:
+                history_eval = [
+                    {"speaker_name": i.speaker_name, "text": i.text, "is_user": i.is_user, "stage": i.stage}
+                    for i in session.interventions
+                ]
+                decisions_eval = [
+                    {"stage": d.stage, "option": d.selected_option_id, "free_text": d.free_text_response}
+                    for d in session.decisions
+                ]
+                eval_result = llm_service.evaluate_simulation(
+                    case_analysis=case_analysis,
+                    history=history_eval,
+                    decisions=decisions_eval,
+                    user_role=LegalRole(session.user_role)
+                )
 
-        inv_first = InterventionModel(
-            session_id=session.id,
-            speaker_role=first_speaker.role.value,
-            speaker_name=first_speaker.name,
-            stage=session.current_stage,
-            text=reply_text,
-            is_user=False,
-            model_3d_key=first_speaker.model_3d_key,
-            options=[]  # Sin opciones aquí, pues luego habla el juez
-        )
-        db.add(inv_first)
-        db.commit()
-        db.refresh(inv_first)
-        interventions_to_return.append(inv_first)
+                existing_eval = db.query(AcademicEvaluationModel).filter(AcademicEvaluationModel.session_id == session.id).first()
+                if not existing_eval:
+                    eval_model = AcademicEvaluationModel(
+                        session_id=session.id,
+                        academic_disclaimer=eval_result.academic_disclaimer,
+                        verdict=eval_result.verdict,
+                        ruling_summary=eval_result.ruling_summary,
+                        score_coherence=eval_result.score_coherence,
+                        score_fidelity_to_facts=eval_result.score_fidelity_to_facts,
+                        score_evidence_usage=eval_result.score_evidence_usage,
+                        final_feedback=eval_result.final_feedback,
+                        strengths=eval_result.strengths,
+                        areas_for_improvement=eval_result.areas_for_improvement
+                    )
+                    db.add(eval_model)
+                else:
+                    existing_eval.verdict = eval_result.verdict
+                    existing_eval.ruling_summary = eval_result.ruling_summary
+                    existing_eval.score_coherence = eval_result.score_coherence
+                    existing_eval.score_fidelity_to_facts = eval_result.score_fidelity_to_facts
+                    existing_eval.score_evidence_usage = eval_result.score_evidence_usage
+                    existing_eval.final_feedback = eval_result.final_feedback
+                    existing_eval.strengths = eval_result.strengths
+                    existing_eval.areas_for_improvement = eval_result.areas_for_improvement
+                db.commit()
+                evaluation_data = eval_result.model_dump()
+            except Exception as e:
+                print(f"Aviso: Generación de evaluación diferida: {e}")
+        else:
+            first_speaker = represented_party if (current_stage_enum == ProceduralStage.DESAHOGO_PRUEBAS and len(session.interventions) % 3 == 0) else opposing_lawyer
 
-        # Paso 4.2: El Juez modera y abre el turno de decisión para el usuario
-        history_with_reply = history_for_llm + [{
-            "speaker_name": first_speaker.name,
-            "text": reply_text,
-            "is_user": False,
-            "stage": session.current_stage
-        }]
+            turn_first = llm_service.generate_dialogue_turn(
+                case_analysis=case_analysis,
+                history=history_for_llm,
+                stage=current_stage_enum,
+                user_role=LegalRole(session.user_role),
+                active_speaker=first_speaker
+            )
+            reply_text = turn_first.get("text", "La contraparte sostiene su oposición.")
+            if not is_faithful and fidelity_notes:
+                reply_text = f"¡Objeción por falta de rigor fáctico! {fidelity_notes}.\n\n{reply_text}"
 
-        turn_juez = llm_service.generate_dialogue_turn(
-            case_analysis=case_analysis,
-            history=history_with_reply,
-            stage=current_stage_enum,
-            user_role=LegalRole(session.user_role),
-            active_speaker=juez_p
-        )
-        inv_juez = InterventionModel(
-            session_id=session.id,
-            speaker_role=juez_p.role.value,
-            speaker_name=juez_p.name,
-            stage=session.current_stage,
-            text=turn_juez.get("text", "El Tribunal tiene por formuladas las manifestaciones. Letrado, proceda con su intervención."),
-            is_user=False,
-            model_3d_key=juez_p.model_3d_key,
-            options=turn_juez.get("options_for_user", [])
-        )
-        db.add(inv_juez)
-        db.commit()
-        db.refresh(inv_juez)
-        interventions_to_return.append(inv_juez)
+            inv_first = InterventionModel(
+                session_id=session.id,
+                speaker_role=first_speaker.role.value,
+                speaker_name=first_speaker.name,
+                stage=session.current_stage,
+                text=reply_text,
+                is_user=False,
+                model_3d_key=first_speaker.model_3d_key,
+                options=[]
+            )
+            db.add(inv_first)
+            db.commit()
+            db.refresh(inv_first)
+            interventions_to_return.append(inv_first)
+
+            history_with_reply = history_for_llm + [{
+                "speaker_name": first_speaker.name,
+                "text": reply_text,
+                "is_user": False,
+                "stage": session.current_stage
+            }]
+
+            turn_juez = llm_service.generate_dialogue_turn(
+                case_analysis=case_analysis,
+                history=history_with_reply,
+                stage=current_stage_enum,
+                user_role=LegalRole(session.user_role),
+                active_speaker=juez_p
+            )
+            inv_juez = InterventionModel(
+                session_id=session.id,
+                speaker_role=juez_p.role.value,
+                speaker_name=juez_p.name,
+                stage=session.current_stage,
+                text=turn_juez.get("text", "El Tribunal tiene por formuladas las manifestaciones. Letrado, proceda con su intervención."),
+                is_user=False,
+                model_3d_key=juez_p.model_3d_key,
+                options=turn_juez.get("options_for_user", [])
+            )
+            db.add(inv_juez)
+            db.commit()
+            db.refresh(inv_juez)
+            interventions_to_return.append(inv_juez)
 
     last_inv = interventions_to_return[-1]
 

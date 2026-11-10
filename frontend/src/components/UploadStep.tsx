@@ -1,5 +1,5 @@
 import React from 'react';
-import { Gavel, Upload, Sparkles, Scale, BookOpen } from './Icons';
+import { Gavel, Upload, Scale, BookOpen, Shield, FileText } from './Icons';
 
 interface UploadStepProps {
   loading: boolean;
@@ -13,40 +13,51 @@ export const UploadStep: React.FC<UploadStepProps> = ({
   onLoadExample
 }) => {
   return (
-    <div className="max-w-2xl mx-auto my-auto w-full px-2">
-      <div className="bg-stone-900/90 border border-stone-800 rounded-3xl p-8 sm:p-10 shadow-2xl backdrop-blur-xl text-center space-y-6 relative overflow-hidden">
-        {/* Glow sutil de fondo */}
-        <div className="absolute -top-24 -left-24 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-amber-600/10 rounded-full blur-3xl pointer-events-none" />
-
-        {/* Insignia central */}
-        <div className="w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br from-amber-500/20 to-amber-700/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-xl shadow-amber-950/40">
-          <Gavel className="w-10 h-10" />
+    <div className="max-w-3xl mx-auto my-auto w-full px-4 font-sans">
+      <div className="bg-white border border-[#E2E8F0] rounded-3xl p-8 sm:p-12 shadow-xl text-center space-y-6 relative overflow-hidden">
+        {/* Insignia central institucional */}
+        <div className="w-20 h-20 mx-auto rounded-2xl bg-[#14263D] border-2 border-[#C5A15B]/60 flex items-center justify-center text-[#C5A15B] shadow-lg">
+          <Gavel className="w-10 h-10 text-[#C5A15B]" />
         </div>
 
         <div>
-          <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold mb-3">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Sistema Forense de Juicios Orales</span>
+          <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-[#14263D]/5 border border-[#243F5B]/20 text-[#14263D] text-xs font-semibold mb-3">
+            <Shield className="w-3.5 h-3.5 text-[#C5A15B]" />
+            <span>Sistema Institucional de Práctica Procesal</span>
           </div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-stone-100 tracking-tight">
-            Cargar Expediente Procesal
+          <h2 className="text-2xl sm:text-3xl font-bold text-[#14263D] tracking-tight">
+            Ingreso de Expediente Judicial
           </h2>
-          <p className="text-xs sm:text-sm text-stone-400 mt-2 max-w-lg mx-auto leading-relaxed">
-            Sube autos judiciales en formato PDF, Word o TXT. El sistema extraerá los hechos probados,
-            admitirá las pruebas documentadas y construirá la sala 3D con avatares e interacción oral.
+          <p className="text-xs sm:text-sm text-[#334155] mt-2 max-w-lg mx-auto leading-relaxed">
+            Adjunte las piezas procesales en formato PDF, Word o TXT. El sistema procesará los hechos probados,
+            admitirá las pruebas de autos y constituirá la Sala de Vistas Orales correspondiente.
           </p>
         </div>
 
-        {/* Zona de Arrastre de Archivos */}
-        <label className="border-2 border-dashed border-stone-700/90 hover:border-amber-500/70 rounded-2xl p-8 flex flex-col items-center justify-center cursor-pointer bg-stone-950/60 hover:bg-stone-900/80 transition-all duration-200 group shadow-inner">
-          <div className="p-4 rounded-full bg-stone-800/80 group-hover:bg-amber-500/20 text-stone-400 group-hover:text-amber-400 mb-3 transition-colors">
-            <Upload className="w-8 h-8" />
+        {/* Zona de Carga de Documentación */}
+        <label className={`border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center transition-all duration-200 ${
+          loading
+            ? 'border-[#243F5B] bg-[#F5F3EF] cursor-wait opacity-90'
+            : 'border-[#C5A15B]/40 hover:border-[#243F5B] cursor-pointer bg-[#F5F3EF]/60 hover:bg-[#F5F3EF] group'
+        }`}>
+          <div className="p-4 rounded-2xl bg-white border border-[#E2E8F0] text-[#243F5B] group-hover:text-[#14263D] group-hover:border-[#C5A15B] mb-3 transition-colors shadow-sm">
+            {loading ? (
+              <div className="w-8 h-8 border-3 border-[#243F5B]/30 border-t-[#243F5B] rounded-full animate-spin" />
+            ) : (
+              <Upload className="w-8 h-8 text-[#243F5B]" />
+            )}
           </div>
-          <span className="text-sm font-bold text-stone-200 group-hover:text-white">
-            {loading ? 'Analizando expediente con IA...' : 'Selecciona o arrastra el expediente aquí'}
+          <span className="text-sm font-bold text-[#14263D]">
+            {loading ? 'Ingresando autos en Registro General del Tribunal...' : 'Seleccione o arrastre el expediente aquí'}
           </span>
-          <span className="text-xs text-stone-500 mt-1">Admite formatos PDF, DOCX o TXT (hasta 25 MB)</span>
+          <span className="text-xs text-[#64748B] mt-1">
+            {loading ? 'Verificando formato y transfiriendo a Secretaría de Sala' : 'Formatos admitidos: PDF, DOCX o TXT (hasta 25 MB)'}
+          </span>
+          {loading && (
+            <div className="w-48 h-1.5 bg-slate-200 rounded-full mt-3 overflow-hidden">
+              <div className="w-full h-full bg-[#243F5B] rounded-full animate-pulse" />
+            </div>
+          )}
           <input
             type="file"
             accept=".pdf,.docx,.doc,.txt"
@@ -56,49 +67,53 @@ export const UploadStep: React.FC<UploadStepProps> = ({
           />
         </label>
 
-        {/* Carga Rápida de Expediente de Ejemplo */}
+        {/* Carga Rápida de Expediente Penal de Ejemplo */}
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-1">
-          <span className="text-xs text-stone-400">¿Deseas probarlo de inmediato?</span>
+          <span className="text-xs text-[#64748B]">¿Desea iniciar con un caso documentado?</span>
           <button
             type="button"
             onClick={onLoadExample}
             disabled={loading}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-stone-800 to-stone-850 hover:from-amber-600/20 hover:to-amber-500/20 border border-stone-700 hover:border-amber-500/40 text-xs font-bold text-amber-400 hover:text-amber-300 transition-all flex items-center space-x-2 shadow-sm"
+            className="px-4 py-2.5 rounded-xl bg-white hover:bg-[#F5F3EF] border border-[#C5A15B]/60 text-xs font-bold text-[#14263D] hover:text-[#243F5B] transition-all flex items-center space-x-2 shadow-sm cursor-pointer disabled:opacity-50"
           >
-            <BookOpen className="w-3.5 h-3.5" />
-            <span>Cargar Caso Penal de Prueba (142/2024 - Estafa)</span>
+            {loading ? (
+              <div className="w-3.5 h-3.5 border-2 border-[#14263D]/30 border-t-[#14263D] rounded-full animate-spin" />
+            ) : (
+              <BookOpen className="w-3.5 h-3.5 text-[#C5A15B]" />
+            )}
+            <span>{loading ? 'Cargando autos...' : 'Cargar Causa Penal Testigo (142/2024 - Estafa y Falsedad)'}</span>
           </button>
         </div>
 
-        {/* Pilares Institucionales */}
+        {/* Garantías Institucionales de Sala */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left pt-3">
-          <div className="p-3.5 bg-stone-950/70 rounded-xl border border-stone-800/90 text-xs space-y-1">
-            <div className="flex items-center space-x-1.5 text-amber-400 font-bold">
-              <Scale className="w-3.5 h-3.5" />
-              <span>Fidelidad Estricta</span>
+          <div className="p-4 bg-[#F5F3EF] rounded-xl border border-[#E2E8F0] text-xs space-y-1">
+            <div className="flex items-center space-x-1.5 text-[#14263D] font-bold">
+              <Scale className="w-3.5 h-3.5 text-[#C5A15B]" />
+              <span>Sujeción a Autos</span>
             </div>
-            <p className="text-stone-400 text-[11px] leading-relaxed">
-              Sin invenciones. Todas las intervenciones se apegan a los autos procesales.
+            <p className="text-[#64748B] text-[11px] leading-relaxed">
+              Fidelidad probatoria estricta. Todo debate se fundamenta en las constancias del expediente.
             </p>
           </div>
 
-          <div className="p-3.5 bg-stone-950/70 rounded-xl border border-stone-800/90 text-xs space-y-1">
-            <div className="flex items-center space-x-1.5 text-amber-400 font-bold">
-              <Gavel className="w-3.5 h-3.5" />
-              <span>Sala 3D e Iluminación</span>
+          <div className="p-4 bg-[#F5F3EF] rounded-xl border border-[#E2E8F0] text-xs space-y-1">
+            <div className="flex items-center space-x-1.5 text-[#14263D] font-bold">
+              <Gavel className="w-3.5 h-3.5 text-[#C5A15B]" />
+              <span>Sala de Vistas Oral</span>
             </div>
-            <p className="text-stone-400 text-[11px] leading-relaxed">
-              Ambiente arquitectónico luminoso, locomoción por turnos y control de cámara.
+            <p className="text-[#64748B] text-[11px] leading-relaxed">
+              Entorno ceremonial 3D con estrado, tribuna presidencial, estrados de partes y oratoria central.
             </p>
           </div>
 
-          <div className="p-3.5 bg-stone-950/70 rounded-xl border border-stone-800/90 text-xs space-y-1">
-            <div className="flex items-center space-x-1.5 text-amber-400 font-bold">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Voz Neural Adaptativa</span>
+          <div className="p-4 bg-[#F5F3EF] rounded-xl border border-[#E2E8F0] text-xs space-y-1">
+            <div className="flex items-center space-x-1.5 text-[#14263D] font-bold">
+              <FileText className="w-3.5 h-3.5 text-[#C5A15B]" />
+              <span>Resolución Motivada</span>
             </div>
-            <p className="text-stone-400 text-[11px] leading-relaxed">
-              Síntesis OpenAI diferenciada por género (juez, letrados y fiscalía).
+            <p className="text-[#64748B] text-[11px] leading-relaxed">
+              Fallo judicial formal con Resultandos, Considerandos y rúbrica técnica de desempeño forense.
             </p>
           </div>
         </div>

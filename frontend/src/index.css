@@ -1,5 +1,19 @@
 @import "tailwindcss";
 
+@theme {
+  --color-primary-navy: #14263D;
+  --color-secondary-navy: #243F5B;
+  --color-gold-judicial: #C5A15B;
+  --color-gold-hover: #D4B26F;
+  --color-ivory: #F5F3EF;
+  --color-ivory-dark: #EAE6DE;
+  --color-slate-text: #334155;
+  --color-slate-light: #64748B;
+  --color-slate-dark: #1E293B;
+  --color-judicial-card: #FFFFFF;
+  --color-judicial-border: #E2E8F0;
+}
+
 :root {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
@@ -7,12 +21,11 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  --color-canvas: #f6f7fb;
-  --color-ink: #172033;
-  --color-muted: #68738a;
-  --color-line: #e2e6ef;
-  --color-code: #f0f2f7;
-  --color-accent: #4559d9;
+  --color-canvas: #F5F3EF;
+  --color-ink: #14263D;
+  --color-muted: #64748B;
+  --color-line: #E2E8F0;
+  --color-accent: #243F5B;
 }
 
 * {
@@ -23,6 +36,8 @@ body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
+  background-color: #F5F3EF;
+  color: #334155;
 }
 
 button {

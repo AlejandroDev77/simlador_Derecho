@@ -1,111 +1,47 @@
 import React from 'react';
-import { Scale, Volume2, VolumeX, RotateCcw } from './Icons';
+import { Scale, Shield } from './Icons';
 import type { Step } from '../types';
 
 interface HeaderProps {
   currentStep: Step;
-  ttsEnabled: boolean;
-  onToggleTts: () => void;
-  onReset: () => void;
+  caseTitle?: string;
 }
 
-const STEPS: { key: Step; label: string; num: string }[] = [
-  { key: 'upload', label: 'Expediente', num: '1' },
-  { key: 'analysis', label: 'Análisis Forense', num: '2' },
-  { key: 'role_select', label: 'Asignación de Rol', num: '3' },
-  { key: 'courtroom', label: 'Audiencia Sala 3D', num: '4' },
-  { key: 'evaluation', label: 'Fallo y Evaluación', num: '5' }
-];
-
-export const Header: React.FC<HeaderProps> = ({
-  currentStep,
-  ttsEnabled,
-  onToggleTts,
-  onReset
-}) => {
-  const currentIdx = STEPS.findIndex((s) => s.key === currentStep);
-
+export const Header: React.FC<HeaderProps> = ({ currentStep, caseTitle }) => {
   return (
-    <header className="h-16 border-b border-stone-800/90 bg-stone-950/80 backdrop-blur-xl px-4 sm:px-6 flex items-center justify-between shrink-0 z-30 shadow-lg">
-      {/* Logotipo e Identidad Forense */}
+    <header className="h-14 bg-[#14263D] border-b border-[#243F5B] px-6 flex items-center justify-between shrink-0 select-none shadow-md z-20">
+      {/* Título Institucional y Sala */}
       <div className="flex items-center space-x-3">
-        <div className="p-2 rounded-xl bg-gradient-to-br from-amber-500/20 to-amber-700/10 text-amber-400 border border-amber-500/40 shadow-inner">
-          <Scale className="w-5 h-5" />
+        <div className="w-8 h-8 rounded-lg bg-[#243F5B] border border-[#C5A15B]/50 flex items-center justify-center text-[#C5A15B]">
+          <Scale className="w-4 h-4" />
         </div>
         <div>
-          <div className="flex items-center space-x-2">
-            <h1 className="text-sm sm:text-base font-bold text-stone-100 tracking-tight">
-              Tribunal Superior
-            </h1>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 font-semibold uppercase tracking-wider">
-              Simulador 3D
-            </span>
-          </div>
-          <p className="text-[11px] text-stone-400 hidden sm:block">
-            Sala de Audiencias Orales • Práctica Procesal y Evaluación Forense
+          <h2 className="text-xs sm:text-sm font-bold text-white tracking-wide uppercase">
+            Sala de Vistas y Juicios Orales
+          </h2>
+          <p className="text-[10px] text-slate-300 hidden sm:block">
+            Tribunal Superior de Justicia • Sede Judicial Central
           </p>
         </div>
       </div>
 
-      {/* Indicador de Fases Procesales */}
-      <div className="hidden xl:flex items-center space-x-1.5 bg-stone-900/60 p-1.5 rounded-2xl border border-stone-800/80">
-        {STEPS.map((s, idx) => {
-          const isActive = s.key === currentStep;
-          const isPast = idx < currentIdx;
-
-          return (
-            <div key={s.key} className="flex items-center space-x-1">
-              <div
-                className={`px-3 py-1 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-all ${
-                  isActive
-                    ? 'bg-amber-500 text-stone-950 shadow-md shadow-amber-500/20 font-bold'
-                    : isPast
-                    ? 'text-stone-300 bg-stone-800/50'
-                    : 'text-stone-500'
-                }`}
-              >
-                <span
-                  className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${
-                    isActive
-                      ? 'bg-stone-950 text-amber-400 font-bold'
-                      : isPast
-                      ? 'bg-stone-700 text-stone-300'
-                      : 'bg-stone-800 text-stone-600'
-                  }`}
-                >
-                  {s.num}
-                </span>
-                <span>{s.label}</span>
-              </div>
-              {idx < STEPS.length - 1 && <span className="text-stone-700 text-[10px]">›</span>}
-            </div>
-          );
-        })}
+      {/* Centro limpio por requerimiento */}
+      <div className="flex-1 flex justify-center px-4">
+        {caseTitle && currentStep !== 'upload' && currentStep !== 'settings' && (
+          <div className="hidden md:flex items-center space-x-2 px-3 py-1 rounded-full bg-[#0F1E31]/70 border border-[#243F5B] text-xs text-slate-200 max-w-lg truncate">
+            <span className="w-2 h-2 rounded-full bg-[#C5A15B] shrink-0" />
+            <span className="font-semibold text-[#C5A15B] shrink-0">Causa:</span>
+            <span className="truncate text-slate-300 font-medium">{caseTitle}</span>
+          </div>
+        )}
       </div>
 
-      {/* Acciones Globales */}
-      <div className="flex items-center space-x-2">
-        <button
-          onClick={onToggleTts}
-          className={`p-2 rounded-xl border transition-all ${
-            ttsEnabled
-              ? 'bg-amber-500/20 border-amber-500/40 text-amber-400 shadow-sm shadow-amber-500/20'
-              : 'bg-stone-800/80 border-stone-700 text-stone-500 hover:text-stone-300'
-          }`}
-          title={ttsEnabled ? 'Locución oral activada' : 'Locución oral silenciada'}
-        >
-          {ttsEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-        </button>
-
-        {currentStep !== 'upload' && (
-          <button
-            onClick={onReset}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border border-stone-700 bg-stone-800 hover:bg-stone-700 text-xs font-semibold text-stone-200 hover:text-white transition-all shadow-sm"
-          >
-            <RotateCcw className="w-3.5 h-3.5 text-stone-400" />
-            <span className="hidden sm:inline">Nuevo Juicio</span>
-          </button>
-        )}
+      {/* Lado derecho institucional */}
+      <div className="flex items-center space-x-2.5 text-xs text-slate-300">
+        <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-[#243F5B]/70 border border-[#C5A15B]/30 text-[11px]">
+          <Shield className="w-3.5 h-3.5 text-[#C5A15B]" />
+          <span className="font-medium text-white">Audiencia Oficial</span>
+        </div>
       </div>
     </header>
   );

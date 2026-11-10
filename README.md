@@ -4,6 +4,8 @@ Starter de React + FastAPI para el simulador de Derecho, separado en `frontend/`
 
 El frontend usa React, TypeScript, Vite y Tailwind CSS. La capa HTTP y los servicios viven en `frontend/src/services`.
 
+El plan paso a paso del simulador está en [PLAN_DESARROLLO_SIMULADOR_JUDICIAL.md](PLAN_DESARROLLO_SIMULADOR_JUDICIAL.md).
+
 ## Empezar
 
 ```bash

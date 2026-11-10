@@ -1,4 +1,5 @@
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000').replace(/\/$/, '')
+const rawBaseUrl = import.meta.env.VITE_API_BASE_URL;
+const API_BASE_URL = (rawBaseUrl && !rawBaseUrl.includes(':8000') ? rawBaseUrl : 'http://localhost:8001').replace(/\/$/, '');
 
 type RequestOptions = Omit<RequestInit, 'body'> & {
   body?: BodyInit | object | null

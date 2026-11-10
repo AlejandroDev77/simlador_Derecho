@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 .env
+.env.*
+apikey*.txt
+*.sqlite3
+*.db
 .venv/
 __pycache__/
 *.py[cod]

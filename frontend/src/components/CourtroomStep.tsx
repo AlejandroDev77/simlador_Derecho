@@ -67,63 +67,66 @@ export const CourtroomStep: React.FC<CourtroomStepProps> = ({
   const isJudge = simState.user_role === 'juez';
 
   const progress = simState.progress_info || {
-    estimated_total_minutes: 20,
-    estimated_remaining_minutes: 16,
-    total_stages: 5,
+    estimated_total_minutes: 5,
+    estimated_remaining_minutes: 5,
+    total_stages: 6,
     current_stage_number: 1,
     current_stage_label: simState.current_stage.replace(/_/g, ' '),
     current_turn_number: Math.max(1, simState.interventions?.length || 1),
-    total_estimated_turns: 12,
+    total_estimated_turns: 6,
     progress_percent: 15
   };
 
   const STAGES_LIST = [
-    { key: 'apertura', label: '1. Apertura', time: '~3 min' },
-    { key: 'alegatos_iniciales', label: '2. Alegatos', time: '~4 min' },
-    { key: 'desahogo_pruebas', label: '3. Pruebas', time: '~6 min' },
-    { key: 'alegatos_finales', label: '4. Conclusiones', time: '~4 min' },
-    { key: 'deliberacion_sentencia', label: '5. Sentencia', time: '~3 min' },
+    { key: 'introduccion_juez', label: '1. Introducción del Juez', time: '~45s' },
+    { key: 'argumento', label: '2. Argumento', time: '~50s' },
+    { key: 'contraargumento', label: '3. Contraargumento', time: '~55s' },
+    { key: 'replica', label: '4. Réplica', time: '~50s' },
+    { key: 'refutacion', label: '5. Refutación', time: '~55s' },
+    { key: 'veredicto_final', label: '6. Veredicto Final', time: '~45s' },
   ];
 
+  const isConcludedStage = simState.current_stage === 'concluido';
   const currentStageIndex = STAGES_LIST.findIndex(s => s.key === simState.current_stage);
-  const activeIndex = currentStageIndex >= 0 ? currentStageIndex : 0;
+  const activeIndex = isConcludedStage ? STAGES_LIST.length : (currentStageIndex >= 0 ? currentStageIndex : 0);
 
   return (
     <div className="flex-1 flex flex-col space-y-3.5 pb-6">
-      {/* Barra Superior: Estado Procesal, Duración y Controles */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between px-3.5 py-2.5 bg-[#14263D] border border-[#243F5B] rounded-2xl text-slate-100 shrink-0 shadow-md gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Indicador de Etapa Activa */}
-          <div className="flex items-center space-x-2 px-2.5 py-1 rounded-lg bg-[#243F5B]/80 border border-[#C5A15B]/40">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-xs shrink-0" />
-            <span className="text-xs font-bold text-white uppercase tracking-wider">
-              {simState.current_stage.replace(/_/g, ' ')}
+      {/* Barra Superior: Estado Procesal, 6 Etapas, Duración y Controles */}
+      <div className="flex flex-col px-3.5 py-2.5 bg-[#14263D] border border-[#243F5B] rounded-2xl text-slate-100 shrink-0 shadow-md gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Indicador de Etapa Activa */}
+            <div className="flex items-center space-x-2 px-2.5 py-1 rounded-lg bg-[#243F5B]/80 border border-[#C5A15B]/40">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-xs shrink-0" />
+              <span className="text-xs font-bold text-white uppercase tracking-wider">
+                {progress.current_stage_label || simState.current_stage.replace(/_/g, ' ')}
+              </span>
+            </div>
+
+            <span className="text-slate-500 hidden md:inline">•</span>
+
+            {/* Duración Estimada del Juicio (5 min) */}
+            <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-[#0F1E31]/80 border border-[#243F5B] text-xs shadow-inner">
+              <Clock className="w-3.5 h-3.5 text-[#C5A15B] shrink-0" />
+              <span className="text-slate-300">
+                Duración prevista: <strong className="text-white font-semibold">~{progress.estimated_total_minutes} min</strong>
+              </span>
+              <span className="text-slate-600">•</span>
+              <span className="text-[#C5A15B] font-medium">
+                Restante: ~{progress.estimated_remaining_minutes} min (Etapa {Math.min(progress.current_stage_number, progress.total_stages)}/{progress.total_stages})
+              </span>
+            </div>
+
+            <span className="text-slate-500 hidden lg:inline">•</span>
+
+            {/* Rol del Usuario */}
+            <span className="text-xs text-[#C5A15B] font-semibold bg-[#243F5B] border border-[#C5A15B]/30 px-2.5 py-1 rounded-md">
+              Rol en Estrados: {isJudge ? 'MAGISTRADO PRESIDENTE (TRIBUNAL)' : simState.user_role.toUpperCase()}
             </span>
           </div>
 
-          <span className="text-slate-500 hidden md:inline">•</span>
-
-          {/* Duración Estimada del Juicio */}
-          <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-[#0F1E31]/80 border border-[#243F5B] text-xs shadow-inner">
-            <Clock className="w-3.5 h-3.5 text-[#C5A15B] shrink-0" />
-            <span className="text-slate-300">
-              Duración prevista: <strong className="text-white font-semibold">~{progress.estimated_total_minutes} min</strong>
-            </span>
-            <span className="text-slate-600">•</span>
-            <span className="text-[#C5A15B] font-medium">
-              Restante: ~{progress.estimated_remaining_minutes} min (Turno {progress.current_turn_number}/{progress.total_estimated_turns})
-            </span>
-          </div>
-
-          <span className="text-slate-500 hidden lg:inline">•</span>
-
-          {/* Rol del Usuario */}
-          <span className="text-xs text-[#C5A15B] font-semibold bg-[#243F5B] border border-[#C5A15B]/30 px-2.5 py-1 rounded-md">
-            Rol en Estrados: {isJudge ? 'MAGISTRADO PRESIDENTE (TRIBUNAL)' : simState.user_role.toUpperCase()}
-          </span>
-        </div>
-
-        <div className="flex items-center space-x-2 shrink-0">
+          <div className="flex items-center space-x-2 shrink-0">
           {/* Botón para Ampliar Sala / Vista Panorámica */}
           <button
             onClick={() => setIsTheaterMode(!isTheaterMode)}
@@ -181,6 +184,32 @@ export const CourtroomStep: React.FC<CourtroomStepProps> = ({
             <Scale className="w-3.5 h-3.5" />
             <span>Emitir Fallo</span>
           </button>
+          </div>
+        </div>
+
+        {/* Progreso de las 6 Etapas Procesales (~5 min total) */}
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 pt-2 border-t border-[#243F5B]/80">
+          {STAGES_LIST.map((stageItem, idx) => {
+            const isCompleted = isConcludedStage || idx < activeIndex;
+            const isCurrent = !isConcludedStage && idx === activeIndex;
+            return (
+              <div
+                key={stageItem.key}
+                className={`px-2 py-1 rounded-lg border text-[10px] flex items-center justify-between gap-1 transition-all ${
+                  isCurrent
+                    ? 'bg-[#243F5B] border-[#C5A15B] text-white font-bold shadow-xs'
+                    : isCompleted
+                    ? 'bg-[#0F1E31]/80 border-emerald-500/40 text-emerald-300'
+                    : 'bg-[#0F1E31]/40 border-[#243F5B]/60 text-slate-400'
+                }`}
+              >
+                <span className="truncate">{stageItem.label}</span>
+                <span className={`shrink-0 text-[9px] ${isCurrent ? 'text-[#C5A15B]' : 'opacity-75'}`}>
+                  {stageItem.time}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -199,10 +228,12 @@ export const CourtroomStep: React.FC<CourtroomStepProps> = ({
           {/* Canvas Three.js con marco institucional */}
           <div className="flex-1 w-full h-full relative overflow-hidden rounded-2xl border border-slate-200 shadow-md bg-white">
             <Courtroom3D
+              key={simState.session_id}
               currentSpeakerRole={currentIntervention?.speaker_role}
               userRole={simState.user_role}
               activeSpeakerName={currentIntervention?.speaker_name}
               isSpeakingAudio={isSpeakingAudio}
+              participants={simState.participants}
             />
 
             {/* Subtítulo Dinámico Estilo Transmisión Judicial */}
@@ -338,21 +369,21 @@ export const CourtroomStep: React.FC<CourtroomStepProps> = ({
             ))}
           </div>
 
-          {/* Opciones de Decisión Táctica o Redacción Libre */}
-          <div className="p-3 border-t border-slate-200 bg-white space-y-2 shrink-0">
+          {/* Opciones de Decisión Táctica o Redacción Libre (Diferenciado visualmente del historial) */}
+          <div className="p-3 border-t-2 border-[#C5A15B] bg-[#EDE8DD] space-y-2 shrink-0 shadow-inner">
             {simState.status === 'concluido' ||
             (simState.current_stage === 'concluido' && queueLength === 0 && !isSpeakingAudio) ||
-            (currentIntervention?.stage === 'deliberacion_sentencia' &&
+            (currentIntervention?.stage === 'veredicto_final' &&
               (!currentIntervention?.options || currentIntervention.options.length === 0) &&
               queueLength === 0 &&
               !isSpeakingAudio) ? (
-              <div className="p-3.5 rounded-xl bg-[#F5F3EF] border border-[#C5A15B] text-center space-y-2.5 shadow-md">
+              <div className="p-3.5 rounded-xl bg-white border border-[#C5A15B] text-center space-y-2.5 shadow-md">
                 <div className="flex items-center justify-center space-x-2 text-[#14263D] font-bold text-xs uppercase tracking-wider">
                   <Scale className="w-5 h-5 text-[#C5A15B]" />
                   <span>Audiencia Judicial Concluida</span>
                 </div>
                 <p className="text-[11px] text-[#334155] leading-relaxed">
-                  El Tribunal ha deliberado y dictado la Sentencia Judicial definitiva. Procede a consultar el informe de evaluación académica y análisis forense.
+                  El Tribunal ha deliberado y dictado el Veredicto Final definitivo. Procede a consultar el informe de evaluación académica y análisis forense.
                 </p>
                 <button
                   onClick={onEvaluate}
@@ -365,9 +396,15 @@ export const CourtroomStep: React.FC<CourtroomStepProps> = ({
               </div>
             ) : (
               <>
-                <span className="text-[11px] font-bold text-[#14263D] block">
-                  {isJudge ? 'Providencia y Dirección Judicial del Tribunal:' : 'Turno de Intervención Procesal:'}
-                </span>
+                <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-[#14263D] text-white shadow-xs">
+                  <span className="text-[11px] font-bold tracking-wide uppercase flex items-center space-x-1.5">
+                    <span className="w-2 h-2 rounded-full bg-[#C5A15B] shrink-0" />
+                    <span>{isJudge ? 'Providencia y Dirección Judicial' : 'Turno de Intervención Procesal'}</span>
+                  </span>
+                  <span className="text-[10px] text-[#C5A15B] font-semibold">
+                    Tu Respuesta
+                  </span>
+                </div>
 
                 {/* Opciones estructuradas sugeridas */}
                 {currentIntervention?.options && currentIntervention.options.length > 0 && (
@@ -417,7 +454,7 @@ export const CourtroomStep: React.FC<CourtroomStepProps> = ({
                       onSelectOptionId(null);
                     }}
                     placeholder={isJudge ? "O dicte su propia providencia, requerimiento o fallo judicial..." : "O redacta tu propia alegación procesal..."}
-                    className="w-full p-2 bg-[#F5F3EF] border border-slate-300 rounded-lg text-xs text-[#334155] placeholder-slate-400 focus:outline-none focus:border-[#243F5B] focus:bg-white resize-none"
+                    className="w-full p-2 bg-white border border-slate-300 rounded-lg text-xs text-[#334155] placeholder-slate-400 focus:outline-none focus:border-[#243F5B] resize-none"
                   />
                 </div>
 

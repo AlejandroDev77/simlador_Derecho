@@ -31,7 +31,7 @@ class SimulationSessionModel(Base):
     id = Column(String(36), primary_key=True, default=generate_uuid)
     case_file_id = Column(String(36), ForeignKey("case_files.id"), nullable=False)
     user_role = Column(String(50), nullable=False)
-    current_stage = Column(String(50), default="apertura")
+    current_stage = Column(String(50), default="introduccion_juez")
     status = Column(String(50), default="en_curso")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

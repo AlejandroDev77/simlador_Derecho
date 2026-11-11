@@ -16,11 +16,12 @@ class LegalRole(str, Enum):
 
 
 class ProceduralStage(str, Enum):
-    APERTURA = "apertura"
-    ALEGATOS_INICIALES = "alegatos_iniciales"
-    DESAHOGO_PRUEBAS = "desahogo_pruebas"
-    ALEGATOS_FINALES = "alegatos_finales"
-    DELIBERACION_SENTENCIA = "deliberacion_sentencia"
+    INTRODUCCION_JUEZ = "introduccion_juez"
+    ARGUMENTO = "argumento"
+    CONTRAARGUMENTO = "contraargumento"
+    REPLICA = "replica"
+    REFUTACION = "refutacion"
+    VEREDICTO_FINAL = "veredicto_final"
     CONCLUIDO = "concluido"
 
 
@@ -138,13 +139,13 @@ class AcademicEvaluation(BaseModel):
 
 
 class TrialProgressInfo(BaseModel):
-    estimated_total_minutes: int = 20
-    estimated_remaining_minutes: int = 20
-    total_stages: int = 5
+    estimated_total_minutes: int = 5
+    estimated_remaining_minutes: int = 5
+    total_stages: int = 6
     current_stage_number: int = 1
-    current_stage_label: str = "Apertura y Trámite Previo"
+    current_stage_label: str = "1. Introducción del Juez"
     current_turn_number: int = 1
-    total_estimated_turns: int = 12
-    progress_percent: int = 5
+    total_estimated_turns: int = 6
+    progress_percent: int = 15
 
 

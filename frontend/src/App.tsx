@@ -26,44 +26,40 @@ function resolveSpeakerVoice(
   const role = (speakerRole || '').toLowerCase();
   const name = (speakerName || '').toLowerCase();
 
-  // 1. Tribunal / Juez: Preservar voz solemne 'onyx' (o femaleVoice / 'nova' si jueza)
+  // 1. Tribunal / Juez: Voz solemne masculina ('onyx') o femenina ('nova')
   if (role === 'juez' || role.includes('juez') || name.includes('juez') || name.includes('magistrad')) {
     return isFemale ? (settings.femaleVoice || 'nova') : (settings.maleVoice || 'onyx');
   }
 
-  // 2. Abogado Demandante / Acusación / Fiscal: Voz distintiva 'fable' (o 'nova')
+  // 2. Abogado Demandante / Acusación / Fiscal: Voz femenina ('nova') o masculina ('echo')
   if (
     role === 'abogado_demandante' ||
     role === 'fiscal' ||
     role.includes('acusac') ||
     role.includes('fiscal') ||
-    name.includes('fiscal') ||
-    name.includes('prieto') ||
     name.includes('actor')
   ) {
-    return isFemale ? 'nova' : 'fable';
+    return isFemale ? (settings.femaleVoice || 'nova') : 'echo';
   }
 
-  // 3. Abogado Defensor / Demandado: Voz distintiva 'echo' (o 'shimmer')
+  // 3. Abogado Defensor / Demandado: Voz femenina ('shimmer') o masculina ('fable')
   if (
     role === 'abogado_demandado' ||
     role === 'abogado_defensor' ||
-    role.includes('defens') ||
-    name.includes('defens') ||
-    name.includes('morales')
+    role.includes('defens')
   ) {
-    return isFemale ? 'shimmer' : 'echo';
+    return isFemale ? 'shimmer' : 'fable';
   }
 
   // 4. Partes materiales (Demandante o Demandado):
   if (role === 'demandante' || name.includes('demandante')) {
-    return isFemale ? 'shimmer' : 'alloy';
+    return isFemale ? 'shimmer' : 'echo';
   }
-  if (role === 'demandado' || role.includes('acusado') || name.includes('acusado') || name.includes('silva')) {
-    return isFemale ? 'nova' : 'alloy';
+  if (role === 'demandado' || role.includes('acusado') || name.includes('acusado')) {
+    return isFemale ? 'nova' : 'fable';
   }
 
-  // Fallback adaptativo
+  // Fallback adaptativo por género
   return isFemale ? (settings.femaleVoice || 'nova') : (settings.maleVoice || 'onyx');
 }
 
@@ -136,6 +132,7 @@ export default function App() {
       browserVoiceURI: '',
       speed: 1.0,
       pitch: 1.0,
+      volume: 1.0,
       autoModulateRole: true
     };
   });
@@ -237,6 +234,9 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
       window.speechSynthesis.cancel();
     }
 
+    const masterVolume = Math.max(0, Math.min(1, voiceSettings.volume ?? 1.0));
+    const speakerIsFemale = currentIntervention.speaker_gender === 'female';
+
     const speakWithBrowserFallback = () => {
       if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
       window.speechSynthesis.cancel();
@@ -245,32 +245,42 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
       utterance.lang = 'es-ES';
 
       const voices = window.speechSynthesis.getVoices();
-      if (voiceSettings.browserVoiceURI) {
+      const esVoices = voices.filter((v) => v.lang.toLowerCase().startsWith('es'));
+      const femaleVoiceHint = /helena|sabina|laura|paloma|elena|elvira|monica|mónica|paulina|dalia|camila|sofia|sofía|carmen|maria|maría|female|mujer|femenin/i;
+      const maleVoiceHint = /pablo|raul|raúl|jorge|alvaro|álvaro|tomas|tomás|diego|enrique|carlos|alonso|male|hombre|masculin/i;
+
+      const genderMatchedVoice = esVoices.find((v) =>
+        speakerIsFemale ? femaleVoiceHint.test(v.name) : maleVoiceHint.test(v.name)
+      );
+
+      if (genderMatchedVoice) {
+        utterance.voice = genderMatchedVoice;
+      } else if (voiceSettings.browserVoiceURI && !currentIntervention.speaker_gender) {
         const matchedVoice = voices.find((v) => v.voiceURI === voiceSettings.browserVoiceURI);
         if (matchedVoice) utterance.voice = matchedVoice;
-      } else {
-        const spanishVoice = voices.find((v) => v.lang.startsWith('es'));
-        if (spanishVoice) utterance.voice = spanishVoice;
+      } else if (esVoices.length > 0) {
+        utterance.voice = esVoices[0];
       }
 
       let calculatedPitch = voiceSettings.pitch;
       let calculatedRate = voiceSettings.speed;
 
+      // Diferenciación vocal base entre hombre y mujer en el motor local
+      calculatedPitch *= speakerIsFemale ? 1.14 : 0.88;
+
       if (voiceSettings.autoModulateRole) {
         const role = currentIntervention.speaker_role;
         if (role === 'juez') {
-          calculatedPitch *= 0.84;
+          calculatedPitch *= 0.92;
           calculatedRate *= 0.94;
         } else if (role === 'fiscal' || role === 'abogado_demandante') {
-          calculatedPitch *= 1.06;
           calculatedRate *= 1.03;
-        } else if (role === 'abogado_demandado') {
-          calculatedPitch *= 0.95;
         }
       }
 
       utterance.pitch = Math.max(0.5, Math.min(2.0, calculatedPitch));
       utterance.rate = Math.max(0.5, Math.min(2.0, calculatedRate));
+      utterance.volume = masterVolume;
 
       utterance.onstart = () => { if (!isCancelled) setIsSpeakingAudio(true); };
       utterance.onend = () => { if (!isCancelled) advanceToNextIntervention(); };
@@ -290,7 +300,6 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
     }
 
     if (voiceSettings.engine === 'openai') {
-      const isFemale = currentIntervention.speaker_gender === 'female';
       const voice = resolveSpeakerVoice(
         currentIntervention.speaker_role,
         currentIntervention.speaker_name,
@@ -300,7 +309,7 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
 
       simulationService.getSpeechAudioBlobUrl(currentIntervention.text, {
         voice,
-        gender: isFemale ? 'female' : 'male',
+        gender: speakerIsFemale ? 'female' : 'male',
         speed: voiceSettings.speed
       })
       .then((blobUrl) => {
@@ -309,6 +318,7 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
           return;
         }
         const audio = new Audio(blobUrl);
+        audio.volume = masterVolume;
         activeAudioRef.current = audio;
 
         audio.onplay = () => {
@@ -454,22 +464,25 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
       // 1. Crear intervención del alumno
       const userRole = simState?.user_role || selectedRole;
       const isJudge = userRole === 'juez';
-      const userGender = res.user_intervention?.speaker_gender || 'male';
+      const matchedUserParticipant = (simState?.participants || analysis?.identified_participants || []).find(
+        (p) => p.role === userRole || (String(userRole) === 'abogado_defensor' && p.role === 'abogado_demandado')
+      );
+      const userGender = res.user_intervention?.speaker_gender || matchedUserParticipant?.gender || 'male';
       const roleLabel = isJudge
-        ? 'Magistrado Presidente'
+        ? (userGender === 'female' ? 'Magistrada Presidente' : 'Magistrado Presidente')
         : userRole === 'abogado_demandante'
-        ? 'Letrado Acusación'
+        ? (userGender === 'female' ? 'Letrada Acusación' : 'Letrado Acusación')
         : userRole === 'fiscal'
         ? 'Ministerio Fiscal'
         : userRole === 'abogado_defensor' || userRole === 'abogado_demandado'
-        ? 'Letrado Defensor'
+        ? (userGender === 'female' ? 'Letrada Defensora' : 'Letrado Defensor')
         : userRole === 'demandante'
         ? 'Parte Demandante'
         : 'Parte Demandada';
 
       const userModelKey = isJudge
         ? 'juez1'
-        : (userRole === 'abogado_defensor' || userRole === 'abogado_demandado')
+        : userGender === 'female'
         ? 'abogada1_mujer'
         : 'abogado1_hombre';
 
@@ -477,7 +490,7 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
         id: res.user_intervention?.id || `user_inv_${Date.now()}`,
         speaker_role: userRole,
         speaker_name: `Tú (${roleLabel})`,
-        stage: res.current_stage || simState?.current_stage || 'alegatos',
+        stage: res.current_stage || simState?.current_stage || 'argumento',
         text: res.user_intervention?.text || freeText || (isJudge ? 'El Tribunal dispone la prosecución de los autos conforme a derecho.' : 'Sostengo la argumentación conforme a las constancias de autos.'),
         is_user: true,
         model_3d_key: userModelKey,
@@ -628,6 +641,7 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
               onSelectRole={setSelectedRole}
               loading={loading}
               onStartSimulation={handleStartSimulation}
+              participants={analysis?.identified_participants}
             />
           )}
 

@@ -25,6 +25,7 @@ export const SettingsStep: React.FC<SettingsStepProps> = ({
   const [selectedBrowserVoiceURI, setSelectedBrowserVoiceURI] = useState<string>(settings.browserVoiceURI || '');
   const [speed, setSpeed] = useState<number>(settings.speed ?? 1.0);
   const [pitch, setPitch] = useState<number>(settings.pitch ?? 1.0);
+  const [volume, setVolume] = useState<number>(settings.volume ?? 1.0);
   const [autoModulateRole, setAutoModulateRole] = useState<boolean>(settings.autoModulateRole ?? true);
   const [testingVoice, setTestingVoice] = useState<string | null>(null);
   const [saveFeedback, setSaveFeedback] = useState<boolean>(false);
@@ -87,6 +88,7 @@ export const SettingsStep: React.FC<SettingsStepProps> = ({
           speed
         });
         const audio = new Audio(audioUrl);
+        audio.volume = Math.max(0, Math.min(1, volume));
         activeAudioRef.current = audio;
 
         audio.onended = () => {
@@ -105,6 +107,7 @@ export const SettingsStep: React.FC<SettingsStepProps> = ({
           utterance.lang = 'es-ES';
           utterance.rate = speed;
           utterance.pitch = pitch;
+          utterance.volume = Math.max(0, Math.min(1, volume));
           if (selectedBrowserVoiceURI) {
             const v = browserVoices.find((item) => item.voiceURI === selectedBrowserVoiceURI);
             if (v) utterance.voice = v;
@@ -127,6 +130,7 @@ export const SettingsStep: React.FC<SettingsStepProps> = ({
       browserVoiceURI: selectedBrowserVoiceURI,
       speed,
       pitch,
+      volume,
       autoModulateRole
     };
     onSaveSettings(updated);
@@ -245,15 +249,15 @@ export const SettingsStep: React.FC<SettingsStepProps> = ({
                 <div className="p-4 rounded-xl border border-[#E2E8F0] bg-[#F5F3EF]/60 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-[#14263D]">Presidencia / Juez</span>
-                    <span className="text-[10px] font-bold text-[#C5A15B]">Onyx (Solemne)</span>
+                    <span className="text-[10px] font-bold text-[#C5A15B]">Onyx / Nova</span>
                   </div>
                   <p className="text-[11px] text-[#64748B]">
-                    Tono grave, pausado y moderador de sala.
+                    Voz masculina solemne (Onyx) o femenina (Nova) según el magistrado del expediente.
                   </p>
                   <button
                     onClick={() => handleTestVoice('onyx', 'Magistrado Presidente del Tribunal')}
                     disabled={testingVoice === 'onyx'}
-                    className="w-full py-1.5 px-2 bg-white hover:bg-slate-50 border border-[#E2E8F0] rounded-lg text-[11px] font-semibold text-[#243F5B] flex items-center justify-center space-x-1.5 transition-colors"
+                    className="w-full py-1.5 px-2 bg-white hover:bg-slate-50 border border-[#E2E8F0] rounded-lg text-[11px] font-semibold text-[#243F5B] flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
                   >
                     <Play className="w-3 h-3 text-[#C5A15B]" />
                     <span>{testingVoice === 'onyx' ? 'Reproduciendo...' : 'Probar Timbre'}</span>
@@ -263,38 +267,38 @@ export const SettingsStep: React.FC<SettingsStepProps> = ({
                 {/* Acusación */}
                 <div className="p-4 rounded-xl border border-[#E2E8F0] bg-[#F5F3EF]/60 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-[#14263D]">Letrado de la Acusación</span>
-                    <span className="text-[10px] font-bold text-[#243F5B]">Fable (Articulado)</span>
+                    <span className="font-bold text-[#14263D]">Abogado Acusador / Demandante</span>
+                    <span className="text-[10px] font-bold text-[#243F5B]">Echo / Nova</span>
                   </div>
                   <p className="text-[11px] text-[#64748B]">
-                    Tono dialéctico, dinámico y asertivo para alegatos acusatorios.
+                    Detecta automáticamente el género: voz masculina (Echo) o femenina (Nova).
                   </p>
                   <button
-                    onClick={() => handleTestVoice('fable', 'Letrado de la Acusación')}
-                    disabled={testingVoice === 'fable'}
-                    className="w-full py-1.5 px-2 bg-white hover:bg-slate-50 border border-[#E2E8F0] rounded-lg text-[11px] font-semibold text-[#243F5B] flex items-center justify-center space-x-1.5 transition-colors"
+                    onClick={() => handleTestVoice('echo', 'Abogado de la Parte Demandante')}
+                    disabled={testingVoice === 'echo'}
+                    className="w-full py-1.5 px-2 bg-white hover:bg-slate-50 border border-[#E2E8F0] rounded-lg text-[11px] font-semibold text-[#243F5B] flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
                   >
                     <Play className="w-3 h-3 text-[#C5A15B]" />
-                    <span>{testingVoice === 'fable' ? 'Reproduciendo...' : 'Probar Timbre'}</span>
+                    <span>{testingVoice === 'echo' ? 'Reproduciendo...' : 'Probar Voz Hombre'}</span>
                   </button>
                 </div>
 
                 {/* Defensa */}
                 <div className="p-4 rounded-xl border border-[#E2E8F0] bg-[#F5F3EF]/60 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-[#14263D]">Letrado Defensor</span>
-                    <span className="text-[10px] font-bold text-[#243F5B]">Echo (Resonante)</span>
+                    <span className="font-bold text-[#14263D]">Abogado Defensor / Demandada</span>
+                    <span className="text-[10px] font-bold text-[#243F5B]">Fable / Shimmer</span>
                   </div>
                   <p className="text-[11px] text-[#64748B]">
-                    Tono firme, metódico y estructurado para refutación forense.
+                    Detecta automáticamente el género: voz femenina (Shimmer) o masculina (Fable).
                   </p>
                   <button
-                    onClick={() => handleTestVoice('echo', 'Letrado de la Defensa')}
-                    disabled={testingVoice === 'echo'}
-                    className="w-full py-1.5 px-2 bg-white hover:bg-slate-50 border border-[#E2E8F0] rounded-lg text-[11px] font-semibold text-[#243F5B] flex items-center justify-center space-x-1.5 transition-colors"
+                    onClick={() => handleTestVoice('shimmer', 'Abogada de la Defensa')}
+                    disabled={testingVoice === 'shimmer'}
+                    className="w-full py-1.5 px-2 bg-white hover:bg-slate-50 border border-[#E2E8F0] rounded-lg text-[11px] font-semibold text-[#243F5B] flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
                   >
                     <Play className="w-3 h-3 text-[#C5A15B]" />
-                    <span>{testingVoice === 'echo' ? 'Reproduciendo...' : 'Probar Timbre'}</span>
+                    <span>{testingVoice === 'shimmer' ? 'Reproduciendo...' : 'Probar Voz Mujer'}</span>
                   </button>
                 </div>
               </div>
@@ -318,9 +322,47 @@ export const SettingsStep: React.FC<SettingsStepProps> = ({
             </div>
           )}
 
-          {/* Ajustes de Cadencia / Velocidad */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2 border-t border-[#E2E8F0]">
-            <div className="space-y-2">
+          {/* Ajustes de Volumen, Cadencia / Velocidad y Modulación */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 border-t border-[#E2E8F0]">
+            {/* Control de Volumen General de Sala */}
+            <div className="space-y-2 p-3.5 rounded-xl bg-[#F5F3EF]/70 border border-[#E2E8F0]">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-[#14263D] flex items-center space-x-1.5">
+                  {volume === 0 ? (
+                    <VolumeX className="w-4 h-4 text-rose-600" />
+                  ) : (
+                    <Volume2 className="w-4 h-4 text-[#243F5B]" />
+                  )}
+                  <span>Volumen de Locución:</span>
+                </span>
+                <div className="flex items-center space-x-2">
+                  <span className="font-bold text-[#243F5B]">{Math.round(volume * 100)}%</span>
+                  <button
+                    type="button"
+                    onClick={() => setVolume(volume > 0 ? 0 : 1)}
+                    className="px-2 py-0.5 rounded bg-white hover:bg-slate-100 border border-[#E2E8F0] text-[10px] font-semibold text-[#14263D] cursor-pointer"
+                  >
+                    {volume > 0 ? 'Silenciar' : 'Activar'}
+                  </button>
+                </div>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={volume}
+                onChange={(e) => setVolume(parseFloat(e.target.value))}
+                className="w-full accent-[#243F5B] cursor-pointer"
+              />
+              <div className="flex justify-between text-[10px] text-[#64748B]">
+                <button type="button" onClick={() => setVolume(0)} className="hover:text-[#14263D] cursor-pointer">0% (Mudo)</button>
+                <button type="button" onClick={() => setVolume(0.5)} className="hover:text-[#14263D] cursor-pointer">50% (Medio)</button>
+                <button type="button" onClick={() => setVolume(1)} className="hover:text-[#14263D] cursor-pointer">100% (Máx.)</button>
+              </div>
+            </div>
+
+            <div className="space-y-2 p-3.5 rounded-xl bg-[#F5F3EF]/40 border border-[#E2E8F0]">
               <div className="flex justify-between text-xs">
                 <span className="font-bold text-[#14263D]">Cadencia de Elocución:</span>
                 <span className="font-semibold text-[#243F5B]">{speed.toFixed(2)}x</span>
@@ -341,7 +383,7 @@ export const SettingsStep: React.FC<SettingsStepProps> = ({
               </div>
             </div>
 
-            <div className="space-y-2 flex flex-col justify-center">
+            <div className="space-y-2 flex flex-col justify-center p-3.5 rounded-xl bg-[#F5F3EF]/40 border border-[#E2E8F0]">
               <label className="flex items-center space-x-3 cursor-pointer">
                 <input
                   type="checkbox"
@@ -354,7 +396,7 @@ export const SettingsStep: React.FC<SettingsStepProps> = ({
                     Modulación Dinámica de Turno
                   </span>
                   <span className="text-[11px] text-[#64748B] block">
-                    Ajusta automáticamente la cadencia al presidir el Tribunal o sostener debate
+                    Adapta voz masculina o femenina y cadencia según el interviniente del caso
                   </span>
                 </div>
               </label>

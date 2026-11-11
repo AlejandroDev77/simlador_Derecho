@@ -11,11 +11,12 @@ export type LegalRole =
   | 'perito';
 
 export type ProceduralStage =
-  | 'apertura'
-  | 'alegatos_iniciales'
-  | 'desahogo_pruebas'
-  | 'alegatos_finales'
-  | 'deliberacion_sentencia'
+  | 'introduccion_juez'
+  | 'argumento'
+  | 'contraargumento'
+  | 'replica'
+  | 'refutacion'
+  | 'veredicto_final'
   | 'concluido';
 
 export type SimulationStatus =
@@ -107,6 +108,7 @@ export interface VoiceSettings {
   browserVoiceURI?: string;
   speed: number;
   pitch: number;
+  volume?: number;
   autoModulateRole: boolean;
 }
 

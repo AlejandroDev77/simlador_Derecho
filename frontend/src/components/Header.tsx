@@ -20,7 +20,7 @@ export const Header: React.FC<HeaderProps> = ({ currentStep, caseTitle }) => {
             Sala de Vistas y Juicios Orales
           </h2>
           <p className="text-[10px] text-slate-300 hidden sm:block">
-            Tribunal Superior de Justicia • Sede Judicial Central
+            Órgano Judicial • Estado Plurinacional de Bolivia
           </p>
         </div>
       </div>

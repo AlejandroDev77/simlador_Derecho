@@ -20,20 +20,21 @@ router = APIRouter(prefix="/simulations", tags=["Simulaciones"])
 llm_service = LLMService()
 
 STAGE_PROGRESS_MAP = [
-    {"stage": ProceduralStage.APERTURA.value, "label": "Apertura y Cuestiones Previas", "minutes": 3, "order": 1},
-    {"stage": ProceduralStage.ALEGATOS_INICIALES.value, "label": "Alegatos Iniciales", "minutes": 4, "order": 2},
-    {"stage": ProceduralStage.DESAHOGO_PRUEBAS.value, "label": "Desahogo de Pruebas y Testificales", "minutes": 6, "order": 3},
-    {"stage": ProceduralStage.ALEGATOS_FINALES.value, "label": "Alegatos Finales / Conclusiones", "minutes": 4, "order": 4},
-    {"stage": ProceduralStage.DELIBERACION_SENTENCIA.value, "label": "Deliberación y Sentencia", "minutes": 3, "order": 5},
-    {"stage": ProceduralStage.CONCLUIDO.value, "label": "Audiencia Concluida", "minutes": 0, "order": 5},
+    {"stage": ProceduralStage.INTRODUCCION_JUEZ.value, "label": "1. Introducción del Juez", "remaining_minutes": 5, "order": 1},
+    {"stage": ProceduralStage.ARGUMENTO.value, "label": "2. Argumento", "remaining_minutes": 4, "order": 2},
+    {"stage": ProceduralStage.CONTRAARGUMENTO.value, "label": "3. Contraargumento", "remaining_minutes": 3, "order": 3},
+    {"stage": ProceduralStage.REPLICA.value, "label": "4. Réplica", "remaining_minutes": 2, "order": 4},
+    {"stage": ProceduralStage.REFUTACION.value, "label": "5. Refutación", "remaining_minutes": 1, "order": 5},
+    {"stage": ProceduralStage.VEREDICTO_FINAL.value, "label": "6. Veredicto Final", "remaining_minutes": 1, "order": 6},
+    {"stage": ProceduralStage.CONCLUIDO.value, "label": "Audiencia Concluida", "remaining_minutes": 0, "order": 6},
 ]
 
 
 def calculate_trial_progress(session: SimulationSessionModel) -> dict:
-    """Calcula el tiempo total estimado, tiempo restante y avance procesal."""
-    total_stages = 5
-    total_estimated_turns = 12
-    total_estimated_minutes = 20
+    """Calcula el tiempo total estimado (5 min), tiempo restante y avance en las 6 etapas."""
+    total_stages = 6
+    total_estimated_turns = 6
+    total_estimated_minutes = 5
 
     current_stage_str = session.current_stage
     current_stage_info = next(
@@ -43,17 +44,13 @@ def calculate_trial_progress(session: SimulationSessionModel) -> dict:
 
     stage_order = current_stage_info["order"]
     stage_label = current_stage_info["label"]
+    remaining_minutes = current_stage_info["remaining_minutes"]
 
-    remaining_minutes = sum(
-        s["minutes"] for s in STAGE_PROGRESS_MAP if s["order"] >= stage_order and s["stage"] != ProceduralStage.CONCLUIDO.value
-    )
     if current_stage_str == ProceduralStage.CONCLUIDO.value:
         remaining_minutes = 0
-
-    current_turn = len(session.interventions)
-    pct = min(98, max(5, int((current_turn / total_estimated_turns) * 100)))
-    if current_stage_str == ProceduralStage.CONCLUIDO.value:
         pct = 100
+    else:
+        pct = min(95, max(12, int(((stage_order - 0.3) / total_stages) * 100)))
 
     return {
         "estimated_total_minutes": total_estimated_minutes,
@@ -61,7 +58,7 @@ def calculate_trial_progress(session: SimulationSessionModel) -> dict:
         "total_stages": total_stages,
         "current_stage_number": stage_order,
         "current_stage_label": stage_label,
-        "current_turn_number": max(1, current_turn),
+        "current_turn_number": min(total_estimated_turns, stage_order),
         "total_estimated_turns": total_estimated_turns,
         "progress_percent": pct
     }
@@ -69,29 +66,40 @@ def calculate_trial_progress(session: SimulationSessionModel) -> dict:
 
 def resolve_speaker_gender(speaker_name: str, speaker_role: str = "", participants: list = None) -> str:
     """
-    Determina si la voz del orador debe ser femenina o masculina basándose en los metadatos del caso o rasgos lingüísticos.
+    Determina si la voz del orador debe ser femenina o masculina basándose en nombre, rol en el expediente o rasgos lingüísticos.
     """
+    norm_role = (speaker_role or "").lower()
+    if norm_role == "abogado_defensor":
+        norm_role = LegalRole.ABOGADO_DEMANDADO.value
+
     if participants:
+        # 1. Coincidencia por nombre directo
         for p in participants:
             p_name = p.name if hasattr(p, 'name') else p.get('name', '')
             if p_name and (p_name.lower() in speaker_name.lower() or speaker_name.lower() in p_name.lower()):
                 g = getattr(p, 'gender', None) or (p.get('gender') if isinstance(p, dict) else None)
-                if g in ("male", "female"):
-                    return g
+                desc = getattr(p, 'description', '') if hasattr(p, 'description') else (p.get('description', '') if isinstance(p, dict) else '')
+                return LLMService._infer_gender(p_name, norm_role, desc, g)
+        # 2. Coincidencia por rol procesal (crucial cuando speaker_name es 'Usuario (Tú)')
+        for p in participants:
+            p_role_raw = p.role.value if hasattr(p, 'role') and hasattr(p.role, 'value') else (p.get('role', '') if isinstance(p, dict) else str(getattr(p, 'role', '')))
+            if p_role_raw and (p_role_raw.lower() == norm_role or (norm_role == "fiscal" and p_role_raw.lower() == LegalRole.ABOGADO_DEMANDANTE.value)):
+                g = getattr(p, 'gender', None) or (p.get('gender') if isinstance(p, dict) else None)
+                p_name = p.name if hasattr(p, 'name') else p.get('name', '')
+                desc = getattr(p, 'description', '') if hasattr(p, 'description') else (p.get('description', '') if isinstance(p, dict) else '')
+                return LLMService._infer_gender(p_name, p_role_raw, desc, g)
 
-    combined = f"{speaker_name} {speaker_role}".lower()
-    female_patterns = [
-        r'\bdoña\b', r'\bdña\b', r'\bdra\b', r'\bsra\b', r'\bsenora\b', r'\bseñora\b',
-        r'\babogada\b', r'\bjueza\b', r'\bfiscala\b', r'\bmagistrada\b', r'\bdefensora\b',
-        r'\bcarmen\b', r'\bmar[ií]a\b', r'\belena\b', r'\blaura\b', r'\bana\b',
-        r'\brosa\b', r'\bluc[ií]a\b', r'\bisabel\b', r'\bpatricia\b', r'\bsof[ií]a\b',
-        r'\bclaudia\b', r'\bteresa\b', r'\bm[oó]nica\b', r'\bbeatriz\b', r'\bsilvia\b',
-        r'\bmarta\b', r'\bcristina\b', r'\bandrea\b', r'\bpaula\b', r'\bvaleria\b'
-    ]
-    for pat in female_patterns:
-        if re.search(pat, combined):
-            return "female"
-    return "male"
+    return LLMService._infer_gender(speaker_name, norm_role)
+
+
+def normalize_participants(participants: list[Participant]) -> list[Participant]:
+    """Garantiza género y modelo 3D consistente para cada interviniente del expediente."""
+    normalized: list[Participant] = []
+    for p in participants:
+        g = LLMService._infer_gender(p.name, p.role.value, p.description, p.gender)
+        m = LLMService._model_for_role_and_gender(p.role, g)
+        normalized.append(p.model_copy(update={"gender": g, "model_3d_key": m}))
+    return normalized
 
 
 class SpeechRequest(BaseModel):
@@ -155,7 +163,7 @@ def start_simulation(
     session = SimulationSessionModel(
         case_file_id=case_file.id,
         user_role=input_data.user_role.value,
-        current_stage=ProceduralStage.APERTURA.value,
+        current_stage=ProceduralStage.INTRODUCCION_JUEZ.value,
         status=SimulationStatus.EN_CURSO.value
     )
     db.add(session)
@@ -169,20 +177,20 @@ def start_simulation(
         initial_judge_options = [
             {
                 "id": "opt_juez_open_1",
-                "text": "Se declara formalmente abierta la sesión de audiencia ordinaria. Concedo la palabra a la representación letrada de la acusación para que exponga sus alegatos iniciales.",
-                "legal_tactic": "Apertura y turno a la acusación",
+                "text": "Declaro abierta la audiencia. Tiene la palabra la parte demandante o acusadora para exponer su argumento inicial en forma breve.",
+                "legal_tactic": "Apertura formal y pase a argumento",
                 "risk_level": "bajo"
             },
             {
                 "id": "opt_juez_open_2",
-                "text": "Abierta la sesión pública. Con carácter previo a las alegaciones de fondo, consulto a las partes si existe posibilidad de acuerdo o cuestiones procesales previas que resolver.",
-                "legal_tactic": "Cuestiones previas y avenencia",
+                "text": "Abierta la sesión pública. Consulto brevemente si existen cuestiones previas o posibilidad de conciliación antes del argumento inicial.",
+                "legal_tactic": "Control previo y conciliación",
                 "risk_level": "medio"
             },
             {
                 "id": "opt_juez_open_3",
-                "text": f"Se declara abierto el juicio. Exhorto a los letrados a ceñirse con concisión a {fact_ref} y apercibo contra digresiones impertinentes. Tiene la palabra la acusación.",
-                "legal_tactic": "Dirección rigurosa de sala",
+                "text": f"Abierto el acto. Exhorto a las partes a centrarse estrictamente en {fact_ref[:90]} con máxima brevedad. Inicie la parte actora.",
+                "legal_tactic": "Dirección estricta por tiempo",
                 "risk_level": "alto"
             }
         ]
@@ -190,8 +198,8 @@ def start_simulation(
             session_id=session.id,
             speaker_role="secretario",
             speaker_name="Secretaría del Tribunal",
-            stage=ProceduralStage.APERTURA.value,
-            text=f"En la Sala de Vistas se constituye el Tribunal en audiencia pública para la vista del juicio. Comparecen las partes en estrados. Preside la sesión su Señoría.",
+            stage=ProceduralStage.INTRODUCCION_JUEZ.value,
+            text="En Sala de Vistas se constituye el Tribunal en audiencia pública (duración estimada: 5 minutos). Comparecen las partes en estrados. Preside su Señoría.",
             is_user=False,
             model_3d_key="juez1",
             options=initial_judge_options
@@ -213,7 +221,7 @@ def start_simulation(
         turn_data = llm_service.generate_dialogue_turn(
             case_analysis=analysis,
             history=[],
-            stage=ProceduralStage.APERTURA,
+            stage=ProceduralStage.INTRODUCCION_JUEZ,
             user_role=input_data.user_role,
             active_speaker=juez_participant
         )
@@ -222,8 +230,8 @@ def start_simulation(
             session_id=session.id,
             speaker_role=juez_participant.role.value,
             speaker_name=juez_participant.name,
-            stage=ProceduralStage.APERTURA.value,
-            text=turn_data.get("text", "Se declara abierta la presente audiencia judicial. Las partes procederán con sus alegatos iniciales."),
+            stage=ProceduralStage.INTRODUCCION_JUEZ.value,
+            text=turn_data.get("text", "Se instala la presente audiencia en Estrados Judiciales. Las partes deberán ser breves y concretas. Tiene la palabra para iniciar su argumento."),
             is_user=False,
             model_3d_key=juez_participant.model_3d_key,
             options=turn_data.get("options_for_user", [])
@@ -232,13 +240,15 @@ def start_simulation(
     db.commit()
     db.refresh(opening_intervention)
 
+    normalized_participants = normalize_participants(analysis.identified_participants)
+
     return {
         "session_id": session.id,
         "case_title": analysis.case_title,
         "process_type": analysis.process_type,
         "user_role": session.user_role,
         "current_stage": session.current_stage,
-        "participants": [p.model_dump() for p in analysis.identified_participants],
+        "participants": [p.model_dump() for p in normalized_participants],
         "progress_info": calculate_trial_progress(session),
         "initial_intervention": {
             "id": opening_intervention.id,
@@ -247,7 +257,7 @@ def start_simulation(
             "stage": opening_intervention.stage,
             "text": opening_intervention.text,
             "model_3d_key": opening_intervention.model_3d_key,
-            "speaker_gender": resolve_speaker_gender(opening_intervention.speaker_name, opening_intervention.speaker_role, analysis.identified_participants),
+            "speaker_gender": resolve_speaker_gender(opening_intervention.speaker_name, opening_intervention.speaker_role, normalized_participants),
             "options": opening_intervention.options or []
         }
     }
@@ -266,6 +276,7 @@ def get_simulation_state(
         raise HTTPException(status_code=404, detail="Simulación no encontrada.")
 
     case_analysis = CaseAnalysis(**session.case_file.analysis)
+    normalized_participants = normalize_participants(case_analysis.identified_participants)
     interventions = [
         {
             "id": i.id,
@@ -275,7 +286,7 @@ def get_simulation_state(
             "text": i.text,
             "is_user": i.is_user,
             "model_3d_key": i.model_3d_key,
-            "speaker_gender": resolve_speaker_gender(i.speaker_name, i.speaker_role, case_analysis.identified_participants),
+            "speaker_gender": resolve_speaker_gender(i.speaker_name, i.speaker_role, normalized_participants),
             "options": i.options or [],
             "created_at": i.created_at
         } for i in session.interventions
@@ -290,7 +301,7 @@ def get_simulation_state(
         "current_stage": session.current_stage,
         "status": session.status,
         "progress_info": calculate_trial_progress(session),
-        "participants": [p.model_dump() for p in case_analysis.identified_participants],
+        "participants": [p.model_dump() for p in normalized_participants],
         "facts": [f.model_dump() for f in case_analysis.facts],
         "evidences": [e.model_dump() for e in case_analysis.evidences],
         "interventions": interventions,
@@ -337,9 +348,11 @@ def submit_decision(
     if submission.free_text_response:
         is_faithful, fidelity_notes = llm_service.check_user_fidelity(case_analysis, submission.free_text_response)
 
+    normalized_participants = normalize_participants(case_analysis.identified_participants)
     is_judge = (session.user_role == LegalRole.JUEZ.value)
+    user_gender = resolve_speaker_gender("Usuario (Tú)", session.user_role, normalized_participants)
     user_name = "Tú (Magistrado Presidente)" if is_judge else "Usuario (Tú)"
-    user_model_key = "juez1" if is_judge else ("abogada1_mujer" if session.user_role == LegalRole.ABOGADO_DEMANDADO.value else "abogado1_hombre")
+    user_model_key = "juez1" if is_judge else ("abogada1_mujer" if user_gender == "female" else "abogado1_hombre")
 
     # Guardar intervención del usuario
     user_intervention = InterventionModel(
@@ -367,30 +380,32 @@ def submit_decision(
     db.add(user_decision)
     db.commit()
 
-    # 2. Determinar transición de etapa
+    # 2. Determinar transición de etapa (6 etapas exactas para simulación de ~5 minutos)
+    previous_stage = session.current_stage
     stage_transitions = [
-        ProceduralStage.APERTURA.value,
-        ProceduralStage.ALEGATOS_INICIALES.value,
-        ProceduralStage.DESAHOGO_PRUEBAS.value,
-        ProceduralStage.ALEGATOS_FINALES.value,
-        ProceduralStage.DELIBERACION_SENTENCIA.value,
+        ProceduralStage.INTRODUCCION_JUEZ.value,
+        ProceduralStage.ARGUMENTO.value,
+        ProceduralStage.CONTRAARGUMENTO.value,
+        ProceduralStage.REPLICA.value,
+        ProceduralStage.REFUTACION.value,
+        ProceduralStage.VEREDICTO_FINAL.value,
         ProceduralStage.CONCLUIDO.value
     ]
 
-    current_idx = stage_transitions.index(session.current_stage) if session.current_stage in stage_transitions else 0
-    stage_intervention_count = len([i for i in session.interventions if i.stage == session.current_stage])
-    if stage_intervention_count >= 2 and current_idx < len(stage_transitions) - 2:
+    current_idx = stage_transitions.index(previous_stage) if previous_stage in stage_transitions else 0
+    # Avanzar una etapa por ronda mientras no hayamos llegado ya a veredicto_final
+    if previous_stage != ProceduralStage.VEREDICTO_FINAL.value and current_idx < len(stage_transitions) - 2:
         session.current_stage = stage_transitions[current_idx + 1]
         db.commit()
 
-    # 3. Identificar participantes procesales para debate coral auténtico
+    # 3. Identificar participantes procesales para debate coral auténtico con género y modelo sincronizados
     juez_p = next(
-        (p for p in case_analysis.identified_participants if p.role == LegalRole.JUEZ),
+        (p for p in normalized_participants if p.role == LegalRole.JUEZ),
         Participant(id="juez_1", name="Juez Presidente del Tribunal", role=LegalRole.JUEZ, description="Magistrado a cargo de la sala", model_3d_key="juez1", gender="male")
     )
 
     plaintiff_lawyer = next(
-        (p for p in case_analysis.identified_participants if (
+        (p for p in normalized_participants if (
             p.role in (LegalRole.ABOGADO_DEMANDANTE, LegalRole.FISCAL)
         )),
         Participant(
@@ -404,7 +419,7 @@ def submit_decision(
     )
 
     defense_lawyer = next(
-        (p for p in case_analysis.identified_participants if (
+        (p for p in normalized_participants if (
             p.role in (LegalRole.ABOGADO_DEMANDADO, LegalRole.DEMANDADO) and "abogado" in p.role.value
         )),
         Participant(
@@ -422,16 +437,16 @@ def submit_decision(
 
     # Localizar parte representada (demandado/acusado o demandante)
     represented_party = next(
-        (p for p in case_analysis.identified_participants if (
+        (p for p in normalized_participants if (
             p.role == LegalRole.DEMANDADO if is_user_plaintiff_side else p.role == LegalRole.DEMANDANTE
         )),
         Participant(
             id="parte_material",
-            name="Parte Demandada (Acusado)" if is_user_plaintiff_side else "Parte Demandante",
+            name="Parte Demandada" if is_user_plaintiff_side else "Parte Demandante",
             role=LegalRole.DEMANDADO if is_user_plaintiff_side else LegalRole.DEMANDANTE,
             description="Persona que presta testimonio y responde interrogatorio",
-            model_3d_key="per2" if is_user_plaintiff_side else "persona1",
-            gender="male" if is_user_plaintiff_side else "female"
+            model_3d_key="abogado1_hombre",
+            gender="male"
         )
     )
 
@@ -454,14 +469,14 @@ def submit_decision(
         # ========================================================
         # FLUJO ESPECIALIZADO: EL ALUMNO ES EL MAGISTRADO PRESIDENTE
         # ========================================================
-        if current_stage_enum == ProceduralStage.DELIBERACION_SENTENCIA:
-            # El usuario Juez acaba de dictar el fallo judicial definitivo en estrados
+        if previous_stage == ProceduralStage.VEREDICTO_FINAL.value:
+            # El usuario Juez acaba de pronunciar el Veredicto Final definitivo en estrados
             inv_secretario = InterventionModel(
                 session_id=session.id,
                 speaker_role="secretario",
                 speaker_name="Secretaría del Tribunal",
-                stage=ProceduralStage.DELIBERACION_SENTENCIA.value,
-                text="El Tribunal ha dictado formalmente la Sentencia Judicial en estrados. Queda registrado el Fallo definitivo en autos y formalmente concluida la vista oral.",
+                stage=ProceduralStage.VEREDICTO_FINAL.value,
+                text="Se registra el Veredicto Final dictado por su Señoría en estrados. Queda formalmente concluida la audiencia pública.",
                 is_user=False,
                 model_3d_key="juez1",
                 options=[]
@@ -518,20 +533,35 @@ def submit_decision(
                 evaluation_data = eval_result.model_dump()
             except Exception as e:
                 print(f"Aviso: Generación de evaluación diferida: {e}")
+        elif current_stage_enum == ProceduralStage.VEREDICTO_FINAL:
+            # Acabamos de entrar en la etapa 6 (Veredicto Final): entregar 3 opciones de fallo al usuario Juez
+            verdict_turn = llm_service.generate_dialogue_turn(
+                case_analysis=case_analysis,
+                history=history_for_llm,
+                stage=ProceduralStage.VEREDICTO_FINAL,
+                user_role=LegalRole.JUEZ,
+                active_speaker=juez_p
+            )
+            inv_secretario = InterventionModel(
+                session_id=session.id,
+                speaker_role="secretario",
+                speaker_name="Secretaría del Tribunal",
+                stage=ProceduralStage.VEREDICTO_FINAL.value,
+                text="Concluidas las fases de argumento, contraargumento, réplica y refutación, los autos pasan a despacho. Su Señoría debe pronunciar el Veredicto Final.",
+                is_user=False,
+                model_3d_key="juez1",
+                options=verdict_turn.get("options_for_user", [])
+            )
+            db.add(inv_secretario)
+            db.commit()
+            db.refresh(inv_secretario)
+            interventions_to_return.append(inv_secretario)
         else:
-            # En etapas activas, comparece el letrado o declarante respondiendo directamente a su Señoría
-            recent_speakers = [
-                i.speaker_role for i in session.interventions
-                if not i.is_user and i.speaker_role != "secretario"
-            ]
-            last_lawyer_role = recent_speakers[-1] if recent_speakers else None
-
-            if current_stage_enum == ProceduralStage.DESAHOGO_PRUEBAS and len(session.interventions) % 3 == 0:
-                speaker_now = represented_party
-            elif last_lawyer_role in (LegalRole.ABOGADO_DEMANDANTE.value, LegalRole.FISCAL.value):
-                speaker_now = defense_lawyer
-            else:
+            # En etapas activas (argumento -> plaintiff, contraargumento -> defense, replica -> plaintiff, refutacion -> defense)
+            if current_stage_enum in (ProceduralStage.ARGUMENTO, ProceduralStage.REPLICA):
                 speaker_now = plaintiff_lawyer
+            else:
+                speaker_now = defense_lawyer
 
             turn_lawyer = llm_service.generate_dialogue_turn(
                 case_analysis=case_analysis,
@@ -540,7 +570,7 @@ def submit_decision(
                 user_role=LegalRole.JUEZ,
                 active_speaker=speaker_now
             )
-            reply_text = turn_lawyer.get("text", "Con la venia de su Señoría, esta parte sostiene sus alegatos conforme a los autos.")
+            reply_text = turn_lawyer.get("text", "Con la venia de su Señoría, esta parte sostiene de forma concisa sus fundamentos conforme a los autos.")
 
             inv_speaker = InterventionModel(
                 session_id=session.id,
@@ -560,7 +590,7 @@ def submit_decision(
         # ========================================================
         # FLUJO CUANDO EL USUARIO ES UN LETRADO LITIGANTE
         # ========================================================
-        if current_stage_enum == ProceduralStage.DELIBERACION_SENTENCIA:
+        if current_stage_enum == ProceduralStage.VEREDICTO_FINAL:
             turn_juez = llm_service.generate_dialogue_turn(
                 case_analysis=case_analysis,
                 history=history_for_llm,
@@ -572,8 +602,8 @@ def submit_decision(
                 session_id=session.id,
                 speaker_role=juez_p.role.value,
                 speaker_name=juez_p.name,
-                stage=ProceduralStage.DELIBERACION_SENTENCIA.value,
-                text=turn_juez.get("text", "Visto para sentencia. El Tribunal dicta su resolución definitiva y declara formalmente concluida la sesión."),
+                stage=ProceduralStage.VEREDICTO_FINAL.value,
+                text=turn_juez.get("text", "Visto lo debatido en estrados, este Tribunal pronuncia su Veredicto Final y declara concluida la audiencia."),
                 is_user=False,
                 model_3d_key=juez_p.model_3d_key,
                 options=[]
@@ -631,7 +661,7 @@ def submit_decision(
             except Exception as e:
                 print(f"Aviso: Generación de evaluación diferida: {e}")
         else:
-            first_speaker = represented_party if (current_stage_enum == ProceduralStage.DESAHOGO_PRUEBAS and len(session.interventions) % 3 == 0) else opposing_lawyer
+            first_speaker = represented_party if (current_stage_enum == ProceduralStage.REPLICA and len(session.interventions) % 4 == 0) else opposing_lawyer
 
             turn_first = llm_service.generate_dialogue_turn(
                 case_analysis=case_analysis,
@@ -640,7 +670,7 @@ def submit_decision(
                 user_role=LegalRole(session.user_role),
                 active_speaker=first_speaker
             )
-            reply_text = turn_first.get("text", "La contraparte sostiene su oposición.")
+            reply_text = turn_first.get("text", "Esta defensa rechaza de manera puntual la postura contraria conforme a la prueba de autos.")
             if not is_faithful and fidelity_notes:
                 reply_text = f"¡Objeción por falta de rigor fáctico! {fidelity_notes}.\n\n{reply_text}"
 
@@ -678,7 +708,7 @@ def submit_decision(
                 speaker_role=juez_p.role.value,
                 speaker_name=juez_p.name,
                 stage=session.current_stage,
-                text=turn_juez.get("text", "El Tribunal tiene por formuladas las manifestaciones. Letrado, proceda con su intervención."),
+                text=turn_juez.get("text", "Se tienen presentes las intervenciones. Prosigamos con brevedad a la siguiente actuación."),
                 is_user=False,
                 model_3d_key=juez_p.model_3d_key,
                 options=turn_juez.get("options_for_user", [])
@@ -698,7 +728,7 @@ def submit_decision(
         "user_intervention": {
             "id": user_intervention.id,
             "text": user_intervention.text,
-            "speaker_gender": resolve_speaker_gender(user_intervention.speaker_name, user_intervention.speaker_role, case_analysis.identified_participants)
+            "speaker_gender": user_gender
         },
         "next_intervention": {
             "id": last_inv.id,
@@ -707,7 +737,7 @@ def submit_decision(
             "stage": last_inv.stage,
             "text": last_inv.text,
             "model_3d_key": last_inv.model_3d_key,
-            "speaker_gender": resolve_speaker_gender(last_inv.speaker_name, last_inv.speaker_role, case_analysis.identified_participants),
+            "speaker_gender": resolve_speaker_gender(last_inv.speaker_name, last_inv.speaker_role, normalized_participants),
             "options": last_inv.options or []
         },
         "interventions_sequence": [
@@ -718,7 +748,7 @@ def submit_decision(
                 "stage": inv.stage,
                 "text": inv.text,
                 "model_3d_key": inv.model_3d_key,
-                "speaker_gender": resolve_speaker_gender(inv.speaker_name, inv.speaker_role, case_analysis.identified_participants),
+                "speaker_gender": resolve_speaker_gender(inv.speaker_name, inv.speaker_role, normalized_participants),
                 "options": inv.options or []
             }
             for inv in interventions_to_return
@@ -763,7 +793,7 @@ def submit_objection(
         f"El letrado formula la siguiente objeción en sala: '{objection.grounds}'.\n"
         f"CASO: {case_analysis.case_title}\n"
         f"ÚLTIMA MANIFESTACIÓN: '{last_opponent_text}'\n\n"
-        "Como Magistrado-Juez, resuelve de forma concisa y solemne declarando 'HA LUGAR' o 'NO HA LUGAR' con breve motivación procesal (máximo 2 oraciones)."
+        "Como Magistrado-Juez en audiencia breve de 5 minutos, resuelve directo declarando 'HA LUGAR' o 'NO HA LUGAR' con breve motivación procesal (máximo 1 a 2 oraciones, hasta 30 palabras)."
     )
     ruling = llm_service.client.chat.completions.create(
         model=llm_service.model,

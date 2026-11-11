@@ -16,6 +16,76 @@ class LLMService:
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
         self.model = settings.OPENAI_MODEL
 
+    @staticmethod
+    def _infer_gender(name: str, role_val: str = "", description: str = "", llm_gender: Optional[str] = None) -> str:
+        """
+        Determina con precisión el género ('male' o 'female') a partir de títulos, nombres y metadatos del expediente.
+        """
+        text_name = (name or "").lower()
+        combined = f"{name} {role_val} {description}".lower()
+
+        explicit_female_titles = [
+            r'\bdoña\b', r'\bdña\b', r'\bdra\b', r'\bsra\b', r'\bseñora\b', r'\bsenora\b',
+            r'\babogada\b', r'\bjueza\b', r'\bmagistrada\b', r'\bfiscala\b', r'\bdefensora\b',
+            r'\bacusadora\b', r'\bdemandada\b', r'\btestiga\b', r'\bperita\b'
+        ]
+        explicit_male_titles = [
+            r'\bdon\b', r'\bdr\b', r'\bsr\b', r'\bseñor\b', r'\bsenior\b', r'\bletrado\b',
+            r'\babogado\b', r'\bmagistrado\b', r'\bdefensor\b', r'\bacusado\b'
+        ]
+
+        for pat in explicit_female_titles:
+            if re.search(pat, text_name):
+                return "female"
+        for pat in explicit_male_titles:
+            if re.search(pat, text_name):
+                return "male"
+
+        female_names = [
+            r'\bmar[ií]a\b', r'\belena\b', r'\bluc[ií]a\b', r'\bcarmen\b', r'\blaura\b', r'\bana\b',
+            r'\brosa\b', r'\bvaleria\b', r'\bsof[ií]a\b', r'\bpatricia\b', r'\bclaudia\b', r'\bteresa\b',
+            r'\bm[oó]nica\b', r'\bbeatriz\b', r'\bsilvia\b', r'\bmarta\b', r'\bmartha\b', r'\bcristina\b',
+            r'\bandrea\b', r'\bpaula\b', r'\bgabriela\b', r'\bdaniela\b', r'\bcarolina\b', r'\bver[oó]nica\b',
+            r'\bnatalia\b', r'\bfernanda\b', r'\balejandra\b', r'\bcamila\b', r'\badriana\b', r'\blorena\b',
+            r'\bmariana\b', r'\bsilvana\b', r'\bfabiola\b', r'\broxana\b', r'\bximena\b', r'\bjimena\b',
+            r'\bjuana\b', r'\bisabel\b', r'\bsandra\b', r'\bcarla\b', r'\bkarina\b', r'\bpamela\b',
+            r'\bliliana\b', r'\bcecilia\b', r'\balicia\b', r'\bolga\b', r'\bruth\b', r'\bsonia\b',
+            r'\bnorma\b', r'\bsusana\b', r'\braquel\b', r'\besther\b', r'\bnoem[ií]\b', r'\bgloria\b',
+            r'\bmaribel\b', r'\bgladys\b', r'\byaneth\b', r'\bjanet\b', r'\bwendy\b', r'\bevelyn\b',
+            r'\bbrenda\b', r'\bjessica\b', r'\bvanessa\b', r'\bnicole\b', r'\bestefan[ií]a\b', r'\blizeth\b'
+        ]
+        male_names = [
+            r'\bcarlos\b', r'\bjuan\b', r'\bjos[eé]\b', r'\bluis\b', r'\bjorge\b', r'\bpedro\b',
+            r'\bmiguel\b', r'\balejandro\b', r'\broberto\b', r'\bfernando\b', r'\bricardo\b', r'\bmario\b',
+            r'\bmarco\b', r'\bmarcos\b', r'\bantonio\b', r'\bmanuel\b', r'\bdavid\b', r'\bdaniel\b',
+            r'\bdiego\b', r'\bandr[eé]s\b', r'\bsergio\b', r'\beduardo\b', r'\bjavier\b', r'\bra[uú]l\b',
+            r'\bhugo\b', r'\b[oó]scar\b', r'\bv[ií]ctor\b', r'\bgustavo\b', r'\balberto\b', r'\bpablo\b',
+            r'\brodrigo\b', r'\badri[aá]n\b', r'\bgonzalo\b', r'\bjulio\b', r'\bc[eé]sar\b', r'\bramiro\b',
+            r'\bedgar\b', r'\brub[eé]n\b', r'\bwalter\b', r'\bfreddy\b', r'\bgrover\b', r'\bmarcelo\b',
+            r'\bmauricio\b', r'\biv[aá]n\b', r'\bfranz\b', r'\berick\b', r'\bchristian\b', r'\bcristian\b'
+        ]
+
+        for pat in female_names:
+            if re.search(pat, text_name):
+                return "female"
+        for pat in male_names:
+            if re.search(pat, text_name):
+                return "male"
+
+        for pat in explicit_female_titles:
+            if re.search(pat, combined):
+                return "female"
+
+        if llm_gender in ("male", "female"):
+            return llm_gender
+        return "male"
+
+    @staticmethod
+    def _model_for_role_and_gender(role: LegalRole, gender: str) -> str:
+        if role == LegalRole.JUEZ:
+            return "juez1"
+        return "abogada1_mujer" if gender == "female" else "abogado1_hombre"
+
     def analyze_case(self, document_text: str) -> CaseAnalysis:
         """
         Analiza el expediente judicial extrayendo de forma estricta los hechos,
@@ -32,8 +102,9 @@ class LLMService:
             "2. Distingue estrictamente entre hechos probados/documentados y alegaciones de parte.\n"
             "3. Si un dato se desconoce (como el nombre del juez o número de causa), indícalo como 'No determinado' o 'Desconocido'.\n"
             "4. Asigna a cada participante uno de estos roles estándar: 'juez', 'fiscal', 'demandante', 'abogado_demandante', 'demandado', 'abogado_demandado', 'testigo', 'perito'.\n"
-            "5. Para cada participante, asigna uno de estos modelos 3D disponibles: 'juez1', 'juez2', 'per2', 'persona1'. (Usa 'juez1' o 'juez2' para el juez, 'per2' o 'persona1' para abogados y partes).\n"
-            "6. Devuelve un JSON estrictamente conforme al esquema solicitado."
+            "5. Detecta obligatoriamente el género real o gramatical ('male' o 'female') de TODOS los participantes (especialmente abogados y demandantes/demandados) según sus nombres, títulos (Don/Doña, Dr./Dra., Sr./Sra., Abogado/Abogada) y contexto del expediente.\n"
+            "6. Asigna 'model_3d_key' estrictamente según rol y género: 'juez1' para juez; 'abogada1_mujer' si es mujer o 'abogado1_hombre' si es hombre para abogados y partes.\n"
+            "7. Devuelve un JSON estrictamente conforme al esquema solicitado."
         )
 
         tools = [{
@@ -91,10 +162,10 @@ class LLMService:
                                     "name": {"type": "string"},
                                     "role": {"type": "string", "enum": ["juez", "fiscal", "demandante", "abogado_demandante", "demandado", "abogado_demandado", "testigo", "perito"]},
                                     "description": {"type": "string"},
-                                    "model_3d_key": {"type": "string", "enum": ["juez1", "juez2", "per2", "persona1"]},
-                                    "gender": {"type": "string", "enum": ["male", "female"], "description": "Género aparente o gramatical (male/female) según el nombre o tratamiento de la persona"}
+                                    "model_3d_key": {"type": "string", "enum": ["juez1", "abogado1_hombre", "abogada1_mujer", "persona1", "per2"]},
+                                    "gender": {"type": "string", "enum": ["male", "female"], "description": "Género obligatorio (male/female) del abogado, demandante, demandado o juez según su nombre o tratamiento"}
                                 },
-                                "required": ["id", "name", "role", "description", "model_3d_key"]
+                                "required": ["id", "name", "role", "description", "model_3d_key", "gender"]
                             }
                         }
                     },
@@ -139,17 +210,24 @@ class LLMService:
             ) for i, e in enumerate(data.get("evidences", []))
         ]
 
-        participants_list = [
-            Participant(
+        participants_list = []
+        for i, p in enumerate(data.get("participants", [])):
+            role_enum = LegalRole(p.get("role", "demandante"))
+            inferred_gender = self._infer_gender(
+                p.get("name", ""),
+                role_enum.value,
+                p.get("description", ""),
+                p.get("gender")
+            )
+            participants_list.append(Participant(
                 id=p.get("id", f"part_{i}"),
                 name=p.get("name", "Participante"),
-                role=LegalRole(p.get("role", "demandante")),
+                role=role_enum,
                 description=p.get("description", ""),
                 is_fictional=False,
-                model_3d_key=p.get("model_3d_key", "persona1"),
-                gender=p.get("gender", "male")
-            ) for i, p in enumerate(data.get("participants", []))
-        ]
+                model_3d_key=self._model_for_role_and_gender(role_enum, inferred_gender),
+                gender=inferred_gender
+            ))
 
         # Asegurar que al menos haya un Juez asignado
         has_juez = any(p.role == LegalRole.JUEZ for p in participants_list)
@@ -196,79 +274,85 @@ class LLMService:
 
         is_user_judge = (user_role == LegalRole.JUEZ)
 
+        stage_directives = {
+            ProceduralStage.INTRODUCCION_JUEZ: "ETAPA 1 (INTRODUCCIÓN DEL JUEZ): Abre formalmente la vista oral, resume en 1 oración el objeto de la causa y concede la palabra para iniciar el argumento.",
+            ProceduralStage.ARGUMENTO: "ETAPA 2 (ARGUMENTO): Presenta o dirige el argumento jurídico central apoyado en un hecho y prueba específica del expediente.",
+            ProceduralStage.CONTRAARGUMENTO: "ETAPA 3 (CONTRAARGUMENTO): Expón o modera la oposición directa frente al argumento previo, contrastándolo con las constancias de autos.",
+            ProceduralStage.REPLICA: "ETAPA 4 (RÉPLICA): Responde puntualmente para reafirmar la postura y desvirtuar las observaciones del contraargumento.",
+            ProceduralStage.REFUTACION: "ETAPA 5 (REFUTACIÓN): Formula la refutación conclusiva atacando la principal debilidad fáctica o probatoria antes del veredicto.",
+            ProceduralStage.VEREDICTO_FINAL: "ETAPA 6 (VEREDICTO FINAL): Dicta o prepara la resolución definitiva motivada (condena/estimación o absolución/desestimación) cerrando la vista."
+        }
+        stage_guide = stage_directives.get(stage, "Avanza el debate procesal de forma ágil.")
+
         role_instruction = ""
         if active_speaker.role == LegalRole.JUEZ:
-            if stage == ProceduralStage.DELIBERACION_SENTENCIA:
+            if stage == ProceduralStage.VEREDICTO_FINAL:
                 role_instruction = (
-                    "DIRECTIVA ESPECÍFICA (JUEZ - DICTADO DE SENTENCIA): Como Magistrado Presidente, pronuncia con máxima solemnidad la SENTENCIA JUDICIAL DEFINITIVA "
-                    "en nombre de la Ley. Expón brevemente los fundamentos de convicción sobre las pruebas practicadas y declara el FALLO judicial explícito "
-                    "(condena o absolución, con penas o indemnizaciones precisas según los autos). Concluye declarando la vista 'VISTA PARA SENTENCIA Y CONCLUIDA LA SESIÓN'. "
-                    "NO solicites más intervenciones a las partes."
+                    "DIRECTIVA ESPECÍFICA (JUEZ - VEREDICTO FINAL): Como Magistrado Presidente, pronuncia de manera solemne y concisa el VEREDICTO FINAL definitivo "
+                    "(3 a 4 oraciones claras, máximo 70 palabras). Expón brevemente el motivo probatorio, declara el FALLO explícito "
+                    "(condena/estimación o absolución/desestimación según los autos) y concluye declarando 'CONCLUIDA LA AUDIENCIA JUDICIAL'."
                 )
             else:
-                role_instruction = "DIRECTIVA ESPECÍFICA (JUEZ): Habla como Magistrado Presidente del Tribunal. Modera con autoridad solemne y concisión (1 a 2 párrafos). Resuelve incidencias o concede el turno de palabra a las partes."
+                role_instruction = "DIRECTIVA ESPECÍFICA (JUEZ): Habla como Magistrado Presidente con autoridad y extrema concisión (2 a 3 oraciones breves, máximo 45 palabras). Modera el debate y concede el turno correspondiente."
         elif active_speaker.role in (LegalRole.ABOGADO_DEMANDANTE, LegalRole.ABOGADO_DEMANDADO, LegalRole.FISCAL):
             if is_user_judge:
                 role_instruction = (
-                    f"DIRECTIVA ESPECÍFICA ({active_speaker.role.value.upper()} ANTE EL JUEZ): El usuario es el MAGISTRADO PRESIDENTE DEL TRIBUNAL. "
-                    "Debes dirigirte respetuosamente a él con fórmulas forenses como 'Con la venia de su Señoría...', 'Señoría, esta parte interesa...', 'Con la venia del Ilustre Tribunal...'. "
-                    "Expón tus alegatos, objeciones o pretensiones sometiéndote a la autoridad de su Señoría y solicitando que resuelva."
+                    f"DIRECTIVA ESPECÍFICA ({active_speaker.role.value.upper()} ANTE EL JUEZ): Dirígete brevemente y con respeto al MAGISTRADO PRESIDENTE (usuario) "
+                    "usando fórmulas como 'Con la venia de su Señoría...' o 'Señoría...'. Ve directo al punto jurídico en 2 o 3 oraciones (máximo 50 palabras)."
                 )
             else:
-                role_instruction = "DIRECTIVA ESPECÍFICA (ABOGADO): Habla con técnica forense y vehemencia dialéctica. Dirígete al centro del plenario, refuta con firmeza el argumento anterior y defiende la teoría del caso de tu parte."
+                role_instruction = "DIRECTIVA ESPECÍFICA (ABOGADO): Habla con técnica forense y agilidad (2 a 3 oraciones directas, máximo 50 palabras). Ve directo al grano refutando o sosteniendo con base en autos."
         elif active_speaker.role in (LegalRole.DEMANDADO, LegalRole.DEMANDANTE, LegalRole.TESTIGO):
             if is_user_judge:
                 role_instruction = (
-                    f"DIRECTIVA ESPECÍFICA (DECLARANTE ANTE EL JUEZ): El usuario es el MAGISTRADO PRESIDENTE. Dirígete con respeto solemne al Tribunal "
-                    "('Señoría...', 'Sí, su Señoría...'). Responde al interrogatorio o imputación sobre los hechos de autos con sinceridad vivencial."
+                    f"DIRECTIVA ESPECÍFICA (DECLARANTE ANTE EL JUEZ): Dirígete con respeto al Tribunal ('Señoría...') en 2 oraciones breves y verídicas (máximo 40 palabras)."
                 )
             else:
-                role_instruction = "DIRECTIVA ESPECÍFICA (PARTE DECLARANTE / ACUSADO): Habla en primera persona desde el estrado. Responde al interrogatorio o imputación con la voz vivencial y verídica de quien declara sobre los hechos de autos."
+                role_instruction = "DIRECTIVA ESPECÍFICA (DECLARANTE): Responde en primera persona en 2 oraciones breves y concretas (máximo 40 palabras) sobre los hechos de autos."
 
         if is_user_judge:
-            if stage == ProceduralStage.DELIBERACION_SENTENCIA:
+            if stage == ProceduralStage.VEREDICTO_FINAL:
                 options_directive = (
-                    "3. GENERACIÓN OBLIGATORIA DE 3 OPCIONES DE FALLO Y SENTENCIA JUDICIAL PARA EL JUEZ (options_for_user):\n"
-                    "   - EL ALUMNO ES EL JUEZ QUE DICTA SENTENCIA DEFINITIVA. NUNCA generes opciones de abogado.\n"
-                    "   - Genera exactamente 3 opciones con fallos motivados según el expediente:\n"
-                    "     * Opción 1 (Fallo Condenatorio / Estimatorio íntegro - riesgo 'medio'): Estimar totalmente la pretensión condenando al pago de costas o pena solicitada, valorando la prueba de cargo.\n"
-                    "     * Opción 2 (Fallo Estimatorio Parcial - riesgo 'bajo'): Apreciar estimación parcial o condena atenuada atendiendo a las dudas razonables sobre los hechos controvertidos.\n"
-                    "     * Opción 3 (Fallo Absolutorio / Desestimatorio - riesgo 'alto'): Declarar la libre absolución o desestimación íntegra por falta de prueba plena o vulneración de presunción de inocencia.\n"
+                    "3. GENERACIÓN OBLIGATORIA DE 3 OPCIONES DE VEREDICTO FINAL PARA EL JUEZ (options_for_user):\n"
+                    "   - EL ALUMNO ES EL JUEZ QUE DICTA EL VEREDICTO FINAL. NUNCA generes opciones de abogado.\n"
+                    "   - Cada opción debe tener máximo 22 palabras:\n"
+                    "     * Opción 1 (Fallo Condenatorio / Estimatorio - riesgo 'medio'): Estimar la pretensión o condenar con base en las pruebas de autos.\n"
+                    "     * Opción 2 (Fallo Parcial - riesgo 'bajo'): Estimación parcial o atenuada por existir elementos controvertidos.\n"
+                    "     * Opción 3 (Fallo Absolutorio / Desestimatorio - riesgo 'alto'): Libre absolución o desestimación por insuficiencia de prueba plena.\n"
                 )
             else:
                 options_directive = (
-                    "3. GENERACIÓN OBLIGATORIA DE 3 DECISIONES Y PROVIDENCIAS JUDICIALES PARA EL JUEZ (options_for_user):\n"
-                    "   - EL USUARIO ES EL MAGISTRADO PRESIDENTE DEL TRIBUNAL (LA MÁXIMA AUTORIDAD JUDICIAL). ESTÁ TERMINANTEMENTE PROHIBIDO redactar opciones de alegato o postura de parte como si fuera abogado.\n"
-                    "   - Cada opción DEBE ser una PROVIDENCIA, MANDATO o RESOLUCIÓN JUDICIAL que el Juez dicta desde el estrado para dirigir el juicio:\n"
-                    "     * Opción 1 (Dirección Ordinaria - riesgo 'bajo'): Conceder la palabra a la contraparte (defensa o acusación) para que conteste, o requerir ratificación formal de alegatos.\n"
-                    "     * Opción 2 (Intervención e Indagación Probatoria - riesgo 'medio'): Requerir al letrado que precise el folio o documento de autos, llamar a declarar al testigo/acusado o delimitar el tiempo de debate.\n"
-                    "     * Opción 3 (Poder Disciplinario o Conclusión - riesgo 'alto'): Apercibir en sala por impertinencia o pérdida de tiempo, inadmitir preguntas capciosas o declarar el trámite concluso para pasar a la siguiente fase procesal.\n"
+                    "3. GENERACIÓN OBLIGATORIA DE 3 DECISIONES JUDICIALES PARA EL JUEZ (options_for_user):\n"
+                    "   - EL USUARIO ES EL MAGISTRADO PRESIDENTE. PROHIBIDO redactar alegatos de abogado.\n"
+                    "   - Cada opción debe ser una orden/providencia breve (1 oración de 15 a 25 palabras) adecuada a la etapa actual:\n"
+                    "     * Opción 1 (Dirección Ordinaria - riesgo 'bajo'): Conceder la palabra a la contraparte para continuar con la siguiente fase.\n"
+                    "     * Opción 2 (Indagación Judicial - riesgo 'medio'): Requerir aclaración breve sobre una prueba o folio específico del expediente.\n"
+                    "     * Opción 3 (Rigor y Cierre de Trámite - riesgo 'alto'): Apercibir brevedad en sala y ordenar pasar de inmediato al siguiente punto procesal.\n"
                 )
         else:
             options_directive = (
-                "3. GENERACIÓN OBLIGATORIA DE 3 OPCIONES ESTRATÉGICAS ÚNICAS Y DIFERENTES PARA EL USUARIO (options_for_user):\n"
-                "   - Las opciones NUNCA deben ser genéricas ni repetirse turno tras turno.\n"
-                "   - Cada opción debe redactar un alegato o pregunta concreto que cite elementos del caso para responder al orador actual.\n"
-                "   - Debes ofrecer 3 tácticas bien diferenciadas:\n"
-                "     * Opción 1 (riesgo 'bajo'): Enfoque conservador, adhesión estricta a la prueba documental o ratificación formal.\n"
-                "     * Opción 2 (riesgo 'medio'): Enfoque dialéctico, contrainterrogatorio, debate probatorio o refutación directa.\n"
-                "     * Opción 3 (riesgo 'alto'): Maniobra procesal audaz, tacha/impugnación probatoria, excepción procesal o alegato de máxima presión.\n"
+                "3. GENERACIÓN OBLIGATORIA DE 3 OPCIONES ESTRATÉGICAS BREVES PARA EL USUARIO (options_for_user):\n"
+                "   - Redacta 3 intervenciones cortas y concretas (1 sola oración clara de 15 a 26 palabras cada una) citando un dato o prueba del caso:\n"
+                "     * Opción 1 (riesgo 'bajo'): Enfoque conservador, adhesión directa a un documento o hecho probado.\n"
+                "     * Opción 2 (riesgo 'medio'): Enfoque dialéctico, argumento o réplica directa al orador anterior.\n"
+                "     * Opción 3 (riesgo 'alto'): Maniobra contundente, impugnación probatoria o refutación incisiva.\n"
             )
 
         system_prompt = (
-            "Eres el motor de simulación de juicios orales. Diriges el debate procesal con rigor técnico, agilidad forense y dramatismo realista.\n"
+            "Eres el motor ágil de simulación de juicios orales (duración total de audiencia: 5 minutos aprox.).\n"
             f"EXPEDIENTE: {case_analysis.case_title} ({case_analysis.process_type})\n"
             f"RESUMEN DE AUTOS: {case_analysis.summary}\n\n"
             f"HECHOS DEL EXPEDIENTE:\n{facts_summary}\n\n"
             f"PRUEBAS ADMITIDAS EN AUTOS:\n{evidences_summary}\n\n"
             f"ETAPA PROCESAL ACTUAL: {stage.value}\n"
+            f"{stage_guide}\n"
             f"ROL DEL USUARIO (ALUMNO): {user_role.value}\n"
             f"PERSONAJE QUE INTERVIENE AHORA: {active_speaker.name} (Rol: {active_speaker.role.value})\n"
             f"{role_instruction}\n"
             f"{last_context}\n\n"
-            "DIRECTIVAS FORENSES Y DE RAMIFICACIÓN:\n"
-            "1. REACTIVIDAD DINÁMICA: Tu intervención verbal DEBE responder DIRECTAMENTE a lo último expresado en la sala (indicado arriba). Si el usuario acaba de responder, la contraparte o el juez deben aludir a sus palabras, refutar su tesis, advertir inconsistencias con los autos o requerir aclaración. ¡La narrativa del juicio debe evolucionar y ramificarse!\n"
-            "2. FIDELIDAD PROCESAL: Cita detalles específicos del expediente (documentos, fechas, testimonios o cuantías de autos).\n"
+            "DIRECTIVAS DE BREVEDAD Y REACTIVIDAD:\n"
+            "1. BREVEDAD ESTRICTA (AUDIENCIA DE 5 MINUTOS): Los textos hablados DEBEN ser cortos, directos y sustanciosos (2 a 3 oraciones, máximo 50 palabras; o 70 palabras máximo solo en Veredicto Final). Nada de introducciones redundantes ni párrafos largos.\n"
+            "2. REACTIVIDAD Y FIDELIDAD: Responde directo a lo último dicho y cita un dato, fecha o prueba concreta de autos.\n"
             f"{options_directive}\n"
             "4. Devuelve un JSON estructurado con text, animation_state y options_for_user."
         )
@@ -327,37 +411,37 @@ class LLMService:
         clean_text = re.sub(rf"^(?:{re.escape(active_speaker.name)}|{re.escape(active_speaker.role.value)}):\s*", "", raw_text, flags=re.IGNORECASE).strip()
         data["text"] = clean_text or raw_text
 
-        # En la etapa de deliberación y sentencia:
+        # En la etapa de veredicto final:
         # Si el usuario es el Juez, SÍ necesita opciones para dictar su fallo. Si no lo es, concluye la vista.
-        if stage == ProceduralStage.DELIBERACION_SENTENCIA and not is_user_judge:
+        if stage == ProceduralStage.VEREDICTO_FINAL and not is_user_judge:
             data["options_for_user"] = []
             return data
 
         # Garantizar que siempre existan opciones tácticas dinámicas basadas en los hechos
         options = data.get("options_for_user", [])
         if not options or len(options) < 2:
-            fact_ref = case_analysis.facts[0].description if case_analysis.facts else "los hechos principales de autos"
+            fact_ref = case_analysis.facts[0].description if case_analysis.facts else "los hechos de autos"
             ev_ref = case_analysis.evidences[0].name if case_analysis.evidences else "la prueba documental"
 
             if is_user_judge:
-                if stage == ProceduralStage.DELIBERACION_SENTENCIA:
+                if stage == ProceduralStage.VEREDICTO_FINAL:
                     options = [
                         {
                             "id": f"opt_{uuid.uuid4().hex[:6]}_cond",
-                            "text": f"FALLO: CONDENAR íntegramente al acusado / ESTIMAR la demanda con base en {ev_ref} y en la acreditación plena de los hechos de autos.",
-                            "legal_tactic": "Sentencia Estimatoria / Condenatoria",
+                            "text": f"VEREDICTO: CONDENAR / ESTIMAR íntegramente con base en {ev_ref}.",
+                            "legal_tactic": "Fallo Estimatorio / Condenatorio",
                             "risk_level": "medio"
                         },
                         {
                             "id": f"opt_{uuid.uuid4().hex[:6]}_parc",
-                            "text": f"FALLO: ESTIMACIÓN PARCIAL atendiendo a las dudas razonables sobre {fact_ref}, minorando la pretensión indemnizatoria o penal.",
-                            "legal_tactic": "Sentencia Estimatoria Parcial",
+                            "text": f"VEREDICTO: ESTIMACIÓN PARCIAL por aspectos controvertidos sobre {fact_ref}.",
+                            "legal_tactic": "Fallo Estimatorio Parcial",
                             "risk_level": "bajo"
                         },
                         {
                             "id": f"opt_{uuid.uuid4().hex[:6]}_abs",
-                            "text": f"FALLO: ABSOLUCIÓN ÍNTEGRA / DESESTIMACIÓN por falta de prueba concluyente de cargo bastante, conforme a la presunción de inocencia.",
-                            "legal_tactic": "Sentencia Absolutoria / Desestimatoria",
+                            "text": "VEREDICTO: ABSOLUCIÓN / DESESTIMACIÓN por insuficiencia de prueba plena.",
+                            "legal_tactic": "Fallo Absolutorio",
                             "risk_level": "alto"
                         }
                     ]
@@ -365,20 +449,20 @@ class LLMService:
                     options = [
                         {
                             "id": f"opt_{uuid.uuid4().hex[:6]}_conceder",
-                            "text": f"El Tribunal tiene por oídas las alegaciones. Se concede el uso de la palabra a la contraparte para que exponga sobre {fact_ref}.",
-                            "legal_tactic": "Concesión de palabra y turno",
+                            "text": "Se tiene por oída su intervención. Tiene la palabra la contraparte para responder.",
+                            "legal_tactic": "Concesión de palabra",
                             "risk_level": "bajo"
                         },
                         {
                             "id": f"opt_{uuid.uuid4().hex[:6]}_requerir",
-                            "text": f"Requiérase al letrado compareciente que precise los extremos de autos relativos a {ev_ref} y concrete su petitum.",
-                            "legal_tactic": "Requerimiento e indagación judicial",
+                            "text": f"Precise brevemente el respaldo de {ev_ref} respecto de su afirmación.",
+                            "legal_tactic": "Requerimiento probatorio",
                             "risk_level": "medio"
                         },
                         {
                             "id": f"opt_{uuid.uuid4().hex[:6]}_apercibir",
-                            "text": "Se previene a las partes sobre el deber de ceñirse estrictamente al objeto de debate, apercibiendo de inadmisión por impertinencia.",
-                            "legal_tactic": "Apercibimiento y dirección de sala",
+                            "text": "Se exhorta brevedad a las partes y pasamos de inmediato al siguiente punto del debate.",
+                            "legal_tactic": "Dirección y celeridad",
                             "risk_level": "alto"
                         }
                     ]
@@ -386,20 +470,20 @@ class LLMService:
                 options = [
                     {
                         "id": f"opt_{uuid.uuid4().hex[:6]}_cons",
-                        "text": f"Sostener la postura de parte respaldándose estrictamente en {ev_ref} y en la literalidad de autos.",
-                        "legal_tactic": "Sujeción documental estricta",
+                        "text": f"Reafirmo nuestra posición con base directa en {ev_ref} de autos.",
+                        "legal_tactic": "Sujeción documental",
                         "risk_level": "bajo"
                     },
                     {
                         "id": f"opt_{uuid.uuid4().hex[:6]}_ref",
-                        "text": f"Confrontar directamente a la contraparte respecto de {fact_ref}, solicitando que el tribunal aperciba la contradicción.",
-                        "legal_tactic": "Refutación dialéctica",
+                        "text": f"Refuto lo dicho por la contraparte contrastándolo directamente con {fact_ref}.",
+                        "legal_tactic": "Refutación directa",
                         "risk_level": "medio"
                     },
                     {
                         "id": f"opt_{uuid.uuid4().hex[:6]}_aud",
-                        "text": f"Impugnar la valoración probatoria de la contraparte y solicitar diligencia final vinculada a {ev_ref}.",
-                        "legal_tactic": "Impugnación procesal",
+                        "text": f"Impugno la interpretación contraria por carecer de sustento en {ev_ref}.",
+                        "legal_tactic": "Impugnación probatoria",
                         "risk_level": "alto"
                     }
                 ]
@@ -457,7 +541,7 @@ class LLMService:
         total_decisions_count = len(decisions)
 
         system_prompt = (
-            "Eres el Tribunal Examinador Académico y Magistrado Judicial en un simulador universitario de juicios orales.\n"
+            "Eres el Tribunal Examinador Académico y Magistrado Judicial en un simulador universitario de juicios orales (formato ágil de 5 minutos en 6 etapas: introducción del juez, argumento, contraargumento, réplica, refutación y veredicto final).\n"
             "Tu labor es emitir la SENTENCIA JUDICIAL DEFINITIVA y una EVALUACIÓN TÉCNICA PEDAGÓGICA REAL sobre el desempeño procesal del alumno.\n"
             f"EXPEDIENTE: {case_analysis.case_title} ({case_analysis.process_type})\n"
             f"RESUMEN DE AUTOS: {case_analysis.summary}\n\n"
@@ -466,14 +550,14 @@ class LLMService:
             f"ROL PROCESAL DEL ALUMNO: {user_role.value}\n\n"
             "DIRECTIVAS ESTRICTAS DE EVALUACIÓN BASADAS EN DESEMPEÑO REAL (0-100):\n"
             "- CRÍTICO - PARTICIPACIÓN INSUFICIENTE O ABANDONO PREMATURO: "
-            "Si el alumno ha intervenido 0 o 1 sola vez en todo el juicio, o si solicitó 'Dictar Fallo' de manera prematura sin haber sostenido alegatos, pruebas o réplicas, "
+            "Si el alumno ha intervenido 0 o 1 sola vez en todo el juicio, o si solicitó 'Emitir Fallo' de manera prematura sin haber sostenido argumento, contraargumento, réplica y refutación, "
             "ESTÁ TERMINANTEMENTE PROHIBIDO otorgar notas aprobatorias. Las calificaciones DEBEN ser severamente bajas (entre 15 y 38 puntos sobre 100), "
-            "y en 'final_feedback' debes señalar expresamente que la actuación procesal (sea como letrado o como magistrado presidente) fue insuficiente, desierta o prematuramente abandonada sin actividad probatoria.\n"
-            "- EVALUACIÓN SEGÚN ROL ASIGNADO: Si el alumno actuó como JUEZ, evalúa su templanza y dirección procesal, si concedió la palabra con orden a acusación y defensa, si resolvió con equidad las pruebas y la motivación del fallo emitido. Si actuó como ABOGADO, evalúa su técnica de litigación, persuasión y defensa de la teoría del caso.\n"
+            "y en 'final_feedback' debes señalar expresamente que la actuación procesal (sea como letrado o como magistrado presidente) fue insuficiente, desierta o prematuramente abandonada sin debate completo.\n"
+            "- EVALUACIÓN SEGÚN ROL ASIGNADO: Si el alumno actuó como JUEZ, evalúa su templanza y dirección procesal a lo largo de las 6 etapas, si concedió la palabra con orden, si indagó sobre pruebas y la motivación del veredicto final. Si actuó como ABOGADO, evalúa su capacidad de argumento, contraargumento, réplica y refutación.\n"
             "- PARTICIPACIÓN MEDIA O INCOMPLETA (2 a 3 intervenciones): Puntuaciones entre 45 y 65 puntos. Si no citó los folios o pruebas del expediente, penaliza fuertemente el manejo de pruebas (score_evidence_usage < 50).\n"
-            "- PARTICIPACIÓN COMPLETA Y RIGUROSA (4 o más turnos con argumentos jurídicos articulados, réplicas y cita de pruebas): Puntuaciones entre 75 y 98 puntos según la solidez demostrada.\n"
+            "- PARTICIPACIÓN COMPLETA Y RIGUROSA (4 o más turnos completando el debate hasta refutación/veredicto con cita de pruebas): Puntuaciones entre 75 y 98 puntos según la solidez demostrada.\n"
             "- PROHIBIDO ASIGNAR NOTAS GENÉRICAS COMO 70 u 80 POR DEFECTO. Las notas deben fluctuar y reflejar fielmente lo que el estudiante expuso.\n"
-            "- FUNDAMENTACIÓN DE SENTENCIA (ruling_summary): Redacta un fallo formal motivado con Resultandos y Considerandos jurídicos conforme a las pruebas de autos."
+            "- FUNDAMENTACIÓN DE SENTENCIA (ruling_summary): Redacta un fallo formal motivado y conciso conforme a las pruebas de autos."
         )
 
         tools = [{

@@ -3,12 +3,14 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Volume2, Sparkles, Sun, Moon, Camera, Scale, Shield, User, Eye, Compass } from './Icons';
+import type { Participant } from '../types';
 
 interface Courtroom3DProps {
   currentSpeakerRole?: string;
   userRole?: string;
   activeSpeakerName?: string;
   isSpeakingAudio?: boolean;
+  participants?: Participant[];
 }
 
 type CameraPreset = 'auto' | 'general' | 'judge' | 'plaintiff' | 'defendant' | 'witness' | 'first_person';
@@ -17,7 +19,8 @@ export const Courtroom3D: React.FC<Courtroom3DProps> = ({
   currentSpeakerRole,
   userRole = 'abogado_demandante',
   activeSpeakerName,
-  isSpeakingAudio = false
+  isSpeakingAudio = false,
+  participants = []
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [loading3D, setLoading3D] = useState(true);
@@ -198,25 +201,295 @@ export const Courtroom3D: React.FC<Courtroom3DProps> = ({
         createPilaster(4.0);
         createPilaster(6.5);
 
-        // Escudo de la Justicia / Balanza Dorada en relieve
-        const shieldGroup = new THREE.Group();
-        const shieldGeo = new THREE.CylinderGeometry(0.85, 0.85, 0.1, 32);
-        const shieldMat = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.85, roughness: 0.2 });
-        const shieldMesh = new THREE.Mesh(shieldGeo, shieldMat);
-        shieldMesh.rotation.x = Math.PI / 2;
-        shieldGroup.add(shieldMesh);
+        // ==========================================
+        // 3.1 AMBIENTACIÓN INSTITUCIONAL DE BOLIVIA
+        // ==========================================
+        const createCanvasTex = (w: number, h: number, draw: (ctx: CanvasRenderingContext2D) => void) => {
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (ctx) draw(ctx);
+          const tex = new THREE.CanvasTexture(canvas);
+          tex.colorSpace = THREE.SRGBColorSpace;
+          tex.needsUpdate = true;
+          return tex;
+        };
 
-        // Detalles de la balanza
-        const scaleBeam = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.06, 0.06), shieldMat);
-        scaleBeam.position.set(0, 0.2, 0.08);
-        shieldGroup.add(scaleBeam);
+        // Textura Bandera Tricolor de Bolivia con Escudo central
+        const boliviaFlagTex = createCanvasTex(512, 340, (ctx) => {
+          ctx.fillStyle = '#D52B1E';
+          ctx.fillRect(0, 0, 512, 113);
+          ctx.fillStyle = '#F9E300';
+          ctx.fillRect(0, 113, 512, 114);
+          ctx.fillStyle = '#007934';
+          ctx.fillRect(0, 227, 512, 113);
 
-        const scaleStem = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.65, 0.06), shieldMat);
-        scaleStem.position.set(0, -0.05, 0.08);
-        shieldGroup.add(scaleStem);
+          // Escudo estilizado al centro de la franja amarilla
+          ctx.save();
+          ctx.translate(256, 170);
+          // Banderas laterales cruzadas
+          ctx.fillStyle = '#D52B1E';
+          ctx.fillRect(-38, -22, 76, 8);
+          ctx.fillStyle = '#007934';
+          ctx.fillRect(-38, 12, 76, 8);
+          // Óvalo dorado y azul
+          ctx.beginPath();
+          ctx.ellipse(0, 0, 26, 32, 0, 0, Math.PI * 2);
+          ctx.fillStyle = '#C5A15B';
+          ctx.fill();
+          ctx.beginPath();
+          ctx.ellipse(0, 0, 20, 25, 0, 0, Math.PI * 2);
+          ctx.fillStyle = '#1D4ED8';
+          ctx.fill();
+          // Cerro Rico y sol naciente
+          ctx.fillStyle = '#FDE047';
+          ctx.beginPath();
+          ctx.arc(0, -10, 7, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#92400E';
+          ctx.beginPath();
+          ctx.moveTo(-15, 16);
+          ctx.lineTo(0, -4);
+          ctx.lineTo(15, 16);
+          ctx.closePath();
+          ctx.fill();
+          // Cóndor estilizado superior
+          ctx.fillStyle = '#1E293B';
+          ctx.beginPath();
+          ctx.moveTo(-22, -33);
+          ctx.quadraticCurveTo(0, -44, 22, -33);
+          ctx.lineTo(0, -28);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        });
 
-        shieldGroup.position.set(0, 6.3, -8.05);
-        scene.add(shieldGroup);
+        // Banderas institucionales en el estrado (Doble Bandera Tricolor de Bolivia)
+
+        // Textura central: Escudo Nacional de Bolivia + Órgano Judicial
+        const centralEscudoTex = createCanvasTex(640, 440, (ctx) => {
+          ctx.fillStyle = '#14263D';
+          ctx.fillRect(0, 0, 640, 440);
+          ctx.strokeStyle = '#C5A15B';
+          ctx.lineWidth = 10;
+          ctx.strokeRect(14, 14, 612, 412);
+          ctx.lineWidth = 3;
+          ctx.strokeRect(26, 26, 588, 388);
+
+          // Emblema circular Escudo
+          ctx.save();
+          ctx.translate(320, 178);
+          ctx.beginPath();
+          ctx.arc(0, 0, 108, 0, Math.PI * 2);
+          ctx.fillStyle = '#1D3350';
+          ctx.fill();
+          ctx.lineWidth = 5;
+          ctx.strokeStyle = '#D4AF37';
+          ctx.stroke();
+
+          // Banderas tricolores cruzadas detrás del óvalo
+          const drawCrossFlag = (angle: number) => {
+            ctx.save();
+            ctx.rotate(angle);
+            ctx.fillStyle = '#D52B1E';
+            ctx.fillRect(-92, -16, 184, 10);
+            ctx.fillStyle = '#F9E300';
+            ctx.fillRect(-92, -6, 184, 10);
+            ctx.fillStyle = '#007934';
+            ctx.fillRect(-92, 4, 184, 10);
+            ctx.restore();
+          };
+          drawCrossFlag(0.32);
+          drawCrossFlag(-0.32);
+
+          // Laurel / Olivo
+          ctx.strokeStyle = '#4ADE80';
+          ctx.lineWidth = 6;
+          ctx.beginPath();
+          ctx.arc(0, 8, 72, Math.PI * 0.15, Math.PI * 0.85);
+          ctx.stroke();
+
+          // Óvalo central
+          ctx.beginPath();
+          ctx.ellipse(0, 0, 52, 66, 0, 0, Math.PI * 2);
+          ctx.fillStyle = '#D4AF37';
+          ctx.fill();
+          ctx.beginPath();
+          ctx.ellipse(0, 0, 42, 55, 0, 0, Math.PI * 2);
+          ctx.fillStyle = '#0F294A';
+          ctx.fill();
+
+          // Sol y Cerro Rico
+          ctx.fillStyle = '#FACC15';
+          ctx.beginPath();
+          ctx.arc(0, -20, 14, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#B45309';
+          ctx.beginPath();
+          ctx.moveTo(-30, 32);
+          ctx.lineTo(0, -10);
+          ctx.lineTo(30, 32);
+          ctx.closePath();
+          ctx.fill();
+
+          // Cóndor Andino encima
+          ctx.fillStyle = '#F8FAFC';
+          ctx.beginPath();
+          ctx.moveTo(-48, -68);
+          ctx.quadraticCurveTo(0, -94, 48, -68);
+          ctx.lineTo(0, -56);
+          ctx.closePath();
+          ctx.fill();
+
+          // 9 estrellas departamentales en arco inferior
+          ctx.fillStyle = '#FDE047';
+          for (let i = 0; i < 9; i++) {
+            const ang = Math.PI * 0.18 + (i / 8) * Math.PI * 0.64;
+            const sx = Math.cos(ang) * 86;
+            const sy = Math.sin(ang) * 82 + 4;
+            ctx.beginPath();
+            ctx.arc(sx, sy, 4, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.restore();
+
+          ctx.fillStyle = '#E5C98B';
+          ctx.font = 'bold 24px Georgia, serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('ESTADO PLURINACIONAL DE BOLIVIA', 320, 342);
+          ctx.fillStyle = '#FFFFFF';
+          ctx.font = 'bold 28px Georgia, serif';
+          ctx.fillText('ÓRGANO JUDICIAL', 320, 382);
+        });
+
+        // Placas laterales constitucionales / judiciales
+        const createWallPlaqueTex = (heading: string, mainText: string, subText: string) =>
+          createCanvasTex(512, 340, (ctx) => {
+            ctx.fillStyle = '#2A140A';
+            ctx.fillRect(0, 0, 512, 340);
+            ctx.strokeStyle = '#C5A15B';
+            ctx.lineWidth = 8;
+            ctx.strokeRect(14, 14, 484, 312);
+            ctx.fillStyle = '#14263D';
+            ctx.fillRect(26, 26, 460, 288);
+
+            // Cinta tricolor superior discreta
+            ctx.fillStyle = '#D52B1E';
+            ctx.fillRect(46, 46, 420, 5);
+            ctx.fillStyle = '#F9E300';
+            ctx.fillRect(46, 51, 420, 5);
+            ctx.fillStyle = '#007934';
+            ctx.fillRect(46, 56, 420, 5);
+
+            ctx.fillStyle = '#C5A15B';
+            ctx.font = 'bold 21px Georgia, serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(heading, 256, 118);
+
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 25px Georgia, serif';
+            ctx.fillText(mainText, 256, 178);
+
+            ctx.fillStyle = '#CBD5E1';
+            ctx.font = 'italic 18px Georgia, serif';
+            ctx.fillText(subText, 256, 236);
+          });
+
+        const centralPlaque = new THREE.Mesh(
+          new THREE.BoxGeometry(3.2, 2.2, 0.08),
+          new THREE.MeshStandardMaterial({ map: centralEscudoTex, roughness: 0.3, metalness: 0.15 })
+        );
+        centralPlaque.position.set(0, 4.75, -8.06);
+        scene.add(centralPlaque);
+
+        const leftWallPlaque = new THREE.Mesh(
+          new THREE.BoxGeometry(1.9, 1.25, 0.07),
+          new THREE.MeshStandardMaterial({
+            map: createWallPlaqueTex(
+              'PRINCIPIOS ÉTICOS • ART. 8 C.P.E.',
+              'AMA QHILLA • AMA LLULLA • AMA SUWA',
+              'Suma Qamaña • Vivir Bien'
+            ),
+            roughness: 0.32,
+          })
+        );
+        leftWallPlaque.position.set(-5.25, 4.75, -8.07);
+        scene.add(leftWallPlaque);
+
+        const rightWallPlaque = new THREE.Mesh(
+          new THREE.BoxGeometry(1.9, 1.25, 0.07),
+          new THREE.MeshStandardMaterial({
+            map: createWallPlaqueTex(
+              'TRIBUNAL DE JUSTICIA',
+              'VERDAD MATERIAL Y DEBIDO PROCESO',
+              'Ley N° 025 del Órgano Judicial'
+            ),
+            roughness: 0.32,
+          })
+        );
+        rightWallPlaque.position.set(5.25, 4.75, -8.07);
+        scene.add(rightWallPlaque);
+
+        // Apliques de iluminación dorada flanqueando el escudo nacional
+        const brassSconceMat = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.8, roughness: 0.25 });
+        const glowBulbMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
+        [-2.25, 2.25].forEach((sx) => {
+          const sconce = new THREE.Group();
+          const backplate = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.05, 16), brassSconceMat);
+          backplate.rotation.x = Math.PI / 2;
+          const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 12), glowBulbMat);
+          bulb.position.set(0, 0.1, 0.12);
+          sconce.add(backplate, bulb);
+          sconce.position.set(sx, 4.75, -8.05);
+          scene.add(sconce);
+        });
+
+        // Banderas Tricolores de Bolivia en ambos extremos del estrado
+        const animatedFlags: { mesh: THREE.Mesh; baseX: Float32Array; phase: number }[] = [];
+        const createCourtFlag = (
+          tex: THREE.Texture,
+          pos: [number, number, number],
+          rotY: number,
+          width: number,
+          height: number,
+          phase: number
+        ) => {
+          const flagGroup = new THREE.Group();
+          const poleBaseMat = new THREE.MeshStandardMaterial({ color: 0xb8860b, metalness: 0.82, roughness: 0.22 });
+          const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 0.1, 20), poleBaseMat);
+          stand.position.y = 0.05;
+          const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.038, 3.15, 16), poleBaseMat);
+          pole.position.y = 1.62;
+          const finial = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.22, 14), poleBaseMat);
+          finial.position.y = 3.28;
+          flagGroup.add(stand, pole, finial);
+
+          const clothGeo = new THREE.PlaneGeometry(width, height, 14, 8);
+          const clothMat = new THREE.MeshStandardMaterial({
+            map: tex,
+            side: THREE.DoubleSide,
+            roughness: 0.58,
+          });
+          const cloth = new THREE.Mesh(clothGeo, clothMat);
+          cloth.position.set(width * 0.5 + 0.02, 2.58, 0);
+          flagGroup.add(cloth);
+
+          const posAttr = clothGeo.attributes.position as THREE.BufferAttribute;
+          const baseX = new Float32Array(posAttr.count);
+          for (let i = 0; i < posAttr.count; i++) {
+            baseX[i] = posAttr.getX(i);
+          }
+          animatedFlags.push({ mesh: cloth, baseX, phase });
+
+          flagGroup.position.set(...pos);
+          flagGroup.rotation.y = rotY;
+          scene.add(flagGroup);
+        };
+
+        // Banderas Tricolores de Bolivia flanqueando ambos lados del estrado (fuera de toda ruta de paso)
+        createCourtFlag(boliviaFlagTex, [-3.15, 0.85, -6.25], 0.35, 1.55, 1.02, 0);
+        createCourtFlag(boliviaFlagTex, [3.15, 0.85, -6.25], -0.35 + Math.PI, 1.55, 1.02, 1.7);
 
         // Estrado elevado del Magistrado-Juez
         const podiumMat = new THREE.MeshStandardMaterial({ color: 0x36190c, roughness: 0.38 });
@@ -229,6 +502,158 @@ export const Courtroom3D: React.FC<Courtroom3DProps> = ({
         const judgeBench = new THREE.Mesh(new THREE.BoxGeometry(5.8, 1.05, 1.4), benchMat);
         judgeBench.position.set(0, 1.28, -5.0);
         scene.add(judgeBench);
+
+        // Placa frontal del estrado con bandera boliviana y leyenda del Órgano Judicial
+        const benchFrontTex = createCanvasTex(512, 160, (ctx) => {
+          ctx.fillStyle = '#14263D';
+          ctx.fillRect(0, 0, 512, 160);
+          ctx.strokeStyle = '#C5A15B';
+          ctx.lineWidth = 6;
+          ctx.strokeRect(8, 8, 496, 144);
+          ctx.fillStyle = '#D52B1E';
+          ctx.fillRect(36, 26, 440, 8);
+          ctx.fillStyle = '#F9E300';
+          ctx.fillRect(36, 34, 440, 8);
+          ctx.fillStyle = '#007934';
+          ctx.fillRect(36, 42, 440, 8);
+          ctx.fillStyle = '#FFFFFF';
+          ctx.font = 'bold 26px Georgia, serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('ÓRGANO JUDICIAL • BOLIVIA', 256, 98);
+          ctx.fillStyle = '#C5A15B';
+          ctx.font = '16px Georgia, serif';
+          ctx.fillText('SALA DE AUDIENCIA ORAL Y PÚBLICA', 256, 130);
+        });
+        const benchCrest = new THREE.Mesh(
+          new THREE.BoxGeometry(2.1, 0.65, 0.04),
+          new THREE.MeshStandardMaterial({ map: benchFrontTex, roughness: 0.35 })
+        );
+        benchCrest.position.set(0, 1.32, -4.29);
+        scene.add(benchCrest);
+
+        // Libros jurídicos bolivianos (C.P.E., Ley 025, Códigos) sobre escritorios
+        const createLawBook = (title: string, coverColor: string, spineColor: string, pos: [number, number, number], rotY: number) => {
+          const bookTex = createCanvasTex(256, 192, (ctx) => {
+            ctx.fillStyle = coverColor;
+            ctx.fillRect(0, 0, 256, 192);
+            ctx.strokeStyle = '#C5A15B';
+            ctx.lineWidth = 8;
+            ctx.strokeRect(10, 10, 236, 172);
+            ctx.fillStyle = spineColor;
+            ctx.fillRect(10, 10, 28, 172);
+            ctx.fillStyle = '#D52B1E';
+            ctx.fillRect(54, 34, 166, 6);
+            ctx.fillStyle = '#F9E300';
+            ctx.fillRect(54, 40, 166, 6);
+            ctx.fillStyle = '#007934';
+            ctx.fillRect(54, 46, 166, 6);
+            ctx.fillStyle = '#F8FAFC';
+            ctx.font = 'bold 22px Georgia, serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(title, 138, 108);
+            ctx.fillStyle = '#C5A15B';
+            ctx.font = 'bold 14px Georgia, serif';
+            ctx.fillText('BOLIVIA', 138, 142);
+          });
+          const book = new THREE.Mesh(
+            new THREE.BoxGeometry(0.32, 0.055, 0.42),
+            new THREE.MeshStandardMaterial({ map: bookTex, roughness: 0.42 })
+          );
+          book.position.set(pos[0], pos[1] + 0.028, pos[2]);
+          book.rotation.y = rotY;
+          scene.add(book);
+        };
+
+        createLawBook('C.P.E.', '#14263D', '#0B1624', [-1.15, 1.81, -4.75], 0.14);
+        createLawBook('LEY 025', '#581C1C', '#3B0F0F', [-1.12, 1.865, -4.77], -0.08);
+        createLawBook('C.P.E.', '#14263D', '#0B1624', [-4.45, 1.1, -0.78], 0.12);
+        createLawBook('CÓDIGO PROC.', '#1E3A5F', '#0F1E31', [4.45, 1.1, -0.78], -0.18);
+
+        // Arreglos florales de Kantuta (flor nacional de Bolivia) en floreros de bronce
+        const createKantutaVase = (pos: [number, number, number]) => {
+          const vaseGroup = new THREE.Group();
+          const vaseMat = new THREE.MeshStandardMaterial({ color: 0xb8860b, metalness: 0.78, roughness: 0.25 });
+          const vase = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.11, 0.24, 16), vaseMat);
+          vase.position.y = 0.12;
+          vaseGroup.add(vase);
+
+          const leafMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.65 });
+          const redPetalMat = new THREE.MeshStandardMaterial({ color: 0xd52b1e, roughness: 0.45 });
+          const goldPetalMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.4 });
+          for (let i = 0; i < 6; i++) {
+            const ang = (i / 6) * Math.PI * 2;
+            const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.01, 0.24, 6), leafMat);
+            stem.position.set(Math.cos(ang) * 0.05, 0.3, Math.sin(ang) * 0.05);
+            stem.rotation.z = Math.cos(ang) * 0.28;
+            stem.rotation.x = Math.sin(ang) * 0.28;
+            const bellRed = new THREE.Mesh(new THREE.ConeGeometry(0.032, 0.08, 8), redPetalMat);
+            bellRed.position.set(Math.cos(ang) * 0.1, 0.39, Math.sin(ang) * 0.1);
+            bellRed.rotation.x = Math.PI;
+            const bellTip = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 8), goldPetalMat);
+            bellTip.position.set(Math.cos(ang) * 0.1, 0.35, Math.sin(ang) * 0.1);
+            vaseGroup.add(stem, bellRed, bellTip);
+          }
+          vaseGroup.position.set(...pos);
+          scene.add(vaseGroup);
+        };
+        createKantutaVase([-2.38, 1.81, -4.92]);
+        createKantutaVase([2.38, 1.81, -4.92]);
+
+        // Mesita ceremonial lateral con tejido Aguayo Andino (lado izquierdo, libre de rutas)
+        const aguayoTex = createCanvasTex(512, 256, (ctx) => {
+          const bands = [
+            { h: 28, c: '#B91C1C' },
+            { h: 16, c: '#FACC15' },
+            { h: 24, c: '#0F766E' },
+            { h: 14, c: '#FFFFFF' },
+            { h: 28, c: '#1D4ED8' },
+            { h: 24, c: '#BE185D' },
+            { h: 28, c: '#B91C1C' },
+            { h: 24, c: '#15803D' },
+            { h: 16, c: '#FACC15' },
+            { h: 54, c: '#991B1B' },
+          ];
+          let y = 0;
+          for (const b of bands) {
+            ctx.fillStyle = b.c;
+            ctx.fillRect(0, y, 512, b.h);
+            y += b.h;
+          }
+          // Rombos andinos sobre franja central
+          ctx.fillStyle = '#FFFFFF';
+          for (let x = 20; x < 500; x += 36) {
+            ctx.beginPath();
+            ctx.moveTo(x, 128);
+            ctx.lineTo(x + 12, 114);
+            ctx.lineTo(x + 24, 128);
+            ctx.lineTo(x + 12, 142);
+            ctx.closePath();
+            ctx.fill();
+          }
+        });
+        const sideTableGroup = new THREE.Group();
+        const sideTableMat = new THREE.MeshStandardMaterial({ color: 0x3b1c0e, roughness: 0.35 });
+        const tableTop = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.08, 0.9), sideTableMat);
+        tableTop.position.y = 0.85;
+        sideTableGroup.add(tableTop);
+        [-0.55, 0.55].forEach((lx) => {
+          [-0.36, 0.36].forEach((lz) => {
+            const leg = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.85, 0.07), sideTableMat);
+            leg.position.set(lx, 0.425, lz);
+            sideTableGroup.add(leg);
+          });
+        });
+        const aguayoRunner = new THREE.Mesh(
+          new THREE.BoxGeometry(1.18, 0.02, 0.72),
+          new THREE.MeshStandardMaterial({ map: aguayoTex, roughness: 0.82 })
+        );
+        aguayoRunner.position.y = 0.9;
+        sideTableGroup.add(aguayoRunner);
+        sideTableGroup.position.set(-5.85, 0, -4.95);
+        sideTableGroup.rotation.y = 0.25;
+        scene.add(sideTableGroup);
+        createKantutaVase([-5.85, 0.91, -4.95]);
+        createLawBook('C.P.E.', '#14263D', '#0B1624', [-5.55, 0.91, -4.85], 0.35);
 
         // Silla presidencial de cuero tras el juez
         const chairMat = new THREE.MeshStandardMaterial({ color: 0x2e120b, roughness: 0.45 });
@@ -444,18 +869,34 @@ export const Courtroom3D: React.FC<Courtroom3DProps> = ({
           });
         };
 
-        // Carga simultánea de los 5 personajes con modelos únicos:
-        // 1. Tribunal / Magistrado-Juez: juez1.glb
-        // 2. Abogado Demandante / Acusación: abogado1_hombre.glb
-        // 3. Parte Demandante / Actor: persona1.glb
-        // 4. Abogada Defensora: abogada1_mujer.glb
-        // 5. Parte Acusada / Demandado: per2.glb
+        // Detección dinámica de género y asignación de modelos 3D (abogado1_hombre / abogada1_mujer):
+        const inferGenderFromParticipant = (p?: Participant, fallback: 'male' | 'female' = 'male'): 'male' | 'female' => {
+          if (p?.gender === 'female' || p?.gender === 'male') return p.gender;
+          const txt = `${p?.name || ''} ${p?.description || ''}`.toLowerCase();
+          if (/\b(doña|dña|dra|sra|señora|abogada|jueza|defensora|mar[ií]a|elena|luc[ií]a|carmen|laura|ana|rosa|valeria|sof[ií]a|patricia|claudia|andrea|paula|gabriela|daniela|carolina|ver[oó]nica|natalia|fernanda|alejandra|camila|adriana|lorena|mariana|isabel|sandra|carla|roxana|ximena|jimena)\b/i.test(txt)) {
+            return 'female';
+          }
+          return fallback;
+        };
+
+        const resolveModelByRoles = (roles: string[], fallbackGender: 'male' | 'female') => {
+          const found = (participants || []).find((p) => roles.includes(p.role));
+          const detectedGender = inferGenderFromParticipant(found, fallbackGender);
+          return detectedGender === 'female' ? '/models/abogada1_mujer.glb' : '/models/abogado1_hombre.glb';
+        };
+
+        const lawyerPlaintiffModel = resolveModelByRoles(['abogado_demandante', 'fiscal'], 'male');
+        const plaintiffModel = resolveModelByRoles(['demandante'], 'male');
+        const lawyerDefendantModel = resolveModelByRoles(['abogado_demandado', 'abogado_defensor'], 'female');
+        const defendantModel = resolveModelByRoles(['demandado'], 'male');
+
+        // Carga simultánea de los 5 personajes según género detectado en el expediente:
         Promise.all([
           loadCharacter('/models/juez1.glb', basePositions.judge, 1.75, 0),
-          loadCharacter('/models/abogado1_hombre.glb', basePositions.lawyerPlaintiff, 1.75, 0.45),
-          loadCharacter('/models/persona1.glb', basePositions.plaintiff, 1.72, 0.35),
-          loadCharacter('/models/abogada1_mujer.glb', basePositions.lawyerDefendant, 1.75, -0.45),
-          loadCharacter('/models/per2.glb', basePositions.defendant, 1.72, -0.35)
+          loadCharacter(lawyerPlaintiffModel, basePositions.lawyerPlaintiff, 1.75, 0.45),
+          loadCharacter(plaintiffModel, basePositions.plaintiff, 1.72, 0.35),
+          loadCharacter(lawyerDefendantModel, basePositions.lawyerDefendant, 1.75, -0.45),
+          loadCharacter(defendantModel, basePositions.defendant, 1.72, -0.35)
         ]).then(([jMesh, lpMesh, pMesh, ldMesh, dMesh]) => {
           if (isDisposed) return;
           judgeMesh = jMesh;
@@ -680,6 +1121,20 @@ export const Courtroom3D: React.FC<Courtroom3DProps> = ({
             }
           }
 
+          // --- 8.15 ONDULACIÓN SUAVE DE BANDERAS NACIONALES ---
+          for (const f of animatedFlags) {
+            const posAttr = f.mesh.geometry.attributes.position as THREE.BufferAttribute;
+            const halfW = Math.max(0.5, f.baseX[posAttr.count - 1] || 0.75);
+            for (let i = 0; i < posAttr.count; i++) {
+              const bx = f.baseX[i];
+              const weight = Math.max(0, (bx + halfW) / (halfW * 2));
+              const wave = Math.sin(bx * 3.8 - t * 2.2 + f.phase) * 0.065 * weight;
+              posAttr.setZ(i, wave);
+            }
+            posAttr.needsUpdate = true;
+            f.mesh.geometry.computeVertexNormals();
+          }
+
           // --- 8.2 ACTUALIZACIÓN DE SPOTLIGHT Y AURA ILUMINADA ---
           let activeSpeakerCoords = basePositions.judge;
           if (isJudgeSpeaking) activeSpeakerCoords = speechPositions.judge;
@@ -842,7 +1297,7 @@ export const Courtroom3D: React.FC<Courtroom3DProps> = ({
       <div className="absolute top-3.5 left-3.5 flex items-center space-x-2 pointer-events-none z-10">
         <span className="px-3 py-1.5 rounded-xl bg-stone-900/90 border border-stone-700 text-xs text-amber-400 font-bold backdrop-blur-md shadow-lg flex items-center space-x-1.5">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span>Tribunal Superior • Sala Nº 1</span>
+          <span>Órgano Judicial de Bolivia • Sala Nº 1</span>
         </span>
         {activeSpeakerName && (
           <span className="px-3 py-1.5 rounded-xl bg-amber-500 text-stone-950 text-xs font-bold shadow-lg animate-pulse flex items-center space-x-1.5">

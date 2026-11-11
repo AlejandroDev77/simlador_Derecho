@@ -1,46 +1,72 @@
 import React from 'react';
 import { Gavel, CheckCircle2, Shield, User, Scale, AlertTriangle } from './Icons';
-import type { LegalRole } from '../types';
+import type { LegalRole, Participant } from '../types';
 
 interface RoleSelectStepProps {
   selectedRole: LegalRole;
   onSelectRole: (role: LegalRole) => void;
   loading: boolean;
   onStartSimulation: () => void;
+  participants?: Participant[];
 }
 
 export const RoleSelectStep: React.FC<RoleSelectStepProps> = ({
   selectedRole,
   onSelectRole,
   loading,
-  onStartSimulation
+  onStartSimulation,
+  participants = []
 }) => {
+  const findByRole = (roles: string[]) => participants.find((p) => roles.includes(p.role));
+  const plaintiffCounsel = findByRole(['abogado_demandante', 'fiscal']);
+  const defenseCounsel = findByRole(['abogado_demandado']);
+  const judgeParticipant = findByRole(['juez']);
+
+  const plaintiffCounselFemale = plaintiffCounsel?.gender === 'female';
+  const defenseCounselFemale = defenseCounsel?.gender === 'female';
+  const judgeFemale = judgeParticipant?.gender === 'female';
+
+  const plaintiffRoleTitle = plaintiffCounselFemale
+    ? 'Abogada del Demandante / Acusación'
+    : 'Abogado del Demandante / Acusación';
+  const defenseRoleTitle = defenseCounsel
+    ? (defenseCounselFemale ? 'Abogada del Demandado / Defensa' : 'Abogado del Demandado / Defensa')
+    : 'Abogada del Demandado / Defensa';
+
   const roleOptions: {
     role: LegalRole;
     title: string;
     stagePosition: string;
+    detectedPerson?: string;
+    detectedGender?: string;
     desc: string;
     icon: React.FC<React.SVGProps<SVGSVGElement>>;
   }[] = [
     {
       role: 'abogado_demandante',
-      title: 'Abogado del Demandante / Acusación',
+      title: plaintiffRoleTitle,
       stagePosition: 'Mesa de la Acusación (Izquierda)',
+      detectedPerson: plaintiffCounsel?.name,
+      detectedGender: plaintiffCounsel ? (plaintiffCounselFemale ? 'Mujer (Voz y Avatar Femenino)' : 'Hombre (Voz y Avatar Masculino)') : undefined,
       desc: 'Sostendrás la pretensión de condena o estimación de demanda, formulando alegatos orales e incorporando pruebas de autos.',
       icon: User
     },
     {
       role: 'abogado_demandado',
-      title: 'Abogada del Demandado / Defensa',
+      title: defenseRoleTitle,
       stagePosition: 'Mesa de la Defensa (Derecha)',
+      detectedPerson: defenseCounsel?.name,
+      detectedGender: defenseCounsel ? (defenseCounselFemale ? 'Mujer (Voz y Avatar Femenino)' : 'Hombre (Voz y Avatar Masculino)') : undefined,
       desc: 'Formularás la contradicción procesal, excepciones jurídicas y desacreditación probatoria para desvirtuar las imputaciones.',
       icon: Shield
     },
     {
       role: 'juez',
-      title: 'Juez Presidente del Tribunal',
+      title: judgeFemale ? 'Jueza Presidente del Tribunal' : 'Juez Presidente del Tribunal',
       stagePosition: 'Estrado Presidencial Central',
-      desc: 'Dirigirás la vista oral plenario, moderarás las intervenciones de las partes, resolverás objeciones y dictarás la sentencia motivada.',
+      detectedPerson: judgeParticipant?.name,
+      detectedGender: judgeParticipant ? (judgeFemale ? 'Mujer (Voz Femenina)' : 'Hombre (Voz Masculina)') : undefined,
+      desc: 'Dirigirás la vista oral plenaria, moderarás las intervenciones de las partes, resolverás objeciones y dictarás el veredicto final.',
       icon: Scale
     }
   ];
@@ -112,6 +138,11 @@ export const RoleSelectStep: React.FC<RoleSelectStepProps> = ({
                   <span className="text-[10px] text-[#C5A15B] font-semibold block mt-0.5">
                     {opt.stagePosition}
                   </span>
+                  {opt.detectedPerson && (
+                    <span className="text-[10px] text-[#243F5B] bg-white/80 border border-[#E2E8F0] rounded px-1.5 py-0.5 inline-block mt-1 font-medium">
+                      {opt.detectedPerson} {opt.detectedGender ? `• ${opt.detectedGender}` : ''}
+                    </span>
+                  )}
                 </div>
 
                 <p className="text-xs text-[#64748B] leading-relaxed">

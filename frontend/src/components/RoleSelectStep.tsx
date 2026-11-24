@@ -17,7 +17,13 @@ export const RoleSelectStep: React.FC<RoleSelectStepProps> = ({
   onStartSimulation,
   participants = []
 }) => {
-  const findByRole = (roles: string[]) => participants.find((p) => roles.includes(p.role));
+  const findByRole = (roles: string[]) => {
+    for (const role of roles) {
+      const match = participants.find((p) => p.role === role);
+      if (match) return match;
+    }
+    return undefined;
+  };
   const plaintiffCounsel = findByRole(['abogado_demandante', 'fiscal']);
   const defenseCounsel = findByRole(['abogado_demandado']);
   const judgeParticipant = findByRole(['juez']);

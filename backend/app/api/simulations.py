@@ -66,40 +66,49 @@ def calculate_trial_progress(session: SimulationSessionModel) -> dict:
 
 def resolve_speaker_gender(speaker_name: str, speaker_role: str = "", participants: list = None) -> str:
     """
-    Determina si la voz del orador debe ser femenina o masculina basándose en nombre, rol en el expediente o rasgos lingüísticos.
+    Determina si la voz del orador debe ser femenina o masculina basándose en nombre, rol exacto en el expediente o rasgos lingüísticos.
     """
     norm_role = (speaker_role or "").lower()
     if norm_role == "abogado_defensor":
         norm_role = LegalRole.ABOGADO_DEMANDADO.value
 
     if participants:
-        # 1. Coincidencia por nombre directo
-        for p in participants:
-            p_name = p.name if hasattr(p, 'name') else p.get('name', '')
-            if p_name and (p_name.lower() in speaker_name.lower() or speaker_name.lower() in p_name.lower()):
-                g = getattr(p, 'gender', None) or (p.get('gender') if isinstance(p, dict) else None)
-                desc = getattr(p, 'description', '') if hasattr(p, 'description') else (p.get('description', '') if isinstance(p, dict) else '')
-                return LLMService._infer_gender(p_name, norm_role, desc, g)
-        # 2. Coincidencia por rol procesal (crucial cuando speaker_name es 'Usuario (Tú)')
-        for p in participants:
-            p_role_raw = p.role.value if hasattr(p, 'role') and hasattr(p.role, 'value') else (p.get('role', '') if isinstance(p, dict) else str(getattr(p, 'role', '')))
-            if p_role_raw and (p_role_raw.lower() == norm_role or (norm_role == "fiscal" and p_role_raw.lower() == LegalRole.ABOGADO_DEMANDANTE.value)):
-                g = getattr(p, 'gender', None) or (p.get('gender') if isinstance(p, dict) else None)
+        # 1. Coincidencia por nombre directo (solo si no es el nombre genérico 'Usuario (Tú)')
+        speaker_lower = (speaker_name or "").lower()
+        if "usuario" not in speaker_lower and not speaker_lower.startswith("tú"):
+            for p in participants:
                 p_name = p.name if hasattr(p, 'name') else p.get('name', '')
-                desc = getattr(p, 'description', '') if hasattr(p, 'description') else (p.get('description', '') if isinstance(p, dict) else '')
-                return LLMService._infer_gender(p_name, p_role_raw, desc, g)
+                if p_name and (p_name.lower() in speaker_lower or speaker_lower in p_name.lower()):
+                    g = getattr(p, 'gender', None) or (p.get('gender') if isinstance(p, dict) else None)
+                    desc = getattr(p, 'description', '') if hasattr(p, 'description') else (p.get('description', '') if isinstance(p, dict) else '')
+                    return LLMService._infer_gender(p_name, norm_role, desc, g)
+
+        # 2. Coincidencia por rol procesal EXACTO primero (abogado_demandante tiene prioridad sobre fiscal)
+        def _role_of(item) -> str:
+            if hasattr(item, 'role') and hasattr(item.role, 'value'):
+                return item.role.value.lower()
+            if isinstance(item, dict):
+                return str(item.get('role', '')).lower()
+            return str(getattr(item, 'role', '')).lower()
+
+        exact_match = next((p for p in participants if _role_of(p) == norm_role), None)
+        if not exact_match and norm_role == LegalRole.ABOGADO_DEMANDANTE.value:
+            exact_match = next((p for p in participants if _role_of(p) == LegalRole.FISCAL.value), None)
+        if not exact_match and norm_role == LegalRole.FISCAL.value:
+            exact_match = next((p for p in participants if _role_of(p) == LegalRole.ABOGADO_DEMANDANTE.value), None)
+
+        if exact_match is not None:
+            g = getattr(exact_match, 'gender', None) or (exact_match.get('gender') if isinstance(exact_match, dict) else None)
+            p_name = exact_match.name if hasattr(exact_match, 'name') else exact_match.get('name', '')
+            desc = getattr(exact_match, 'description', '') if hasattr(exact_match, 'description') else (exact_match.get('description', '') if isinstance(exact_match, dict) else '')
+            return LLMService._infer_gender(p_name, _role_of(exact_match), desc, g)
 
     return LLMService._infer_gender(speaker_name, norm_role)
 
 
 def normalize_participants(participants: list[Participant]) -> list[Participant]:
     """Garantiza género y modelo 3D consistente para cada interviniente del expediente."""
-    normalized: list[Participant] = []
-    for p in participants:
-        g = LLMService._infer_gender(p.name, p.role.value, p.description, p.gender)
-        m = LLMService._model_for_role_and_gender(p.role, g)
-        normalized.append(p.model_copy(update={"gender": g, "model_3d_key": m}))
-    return normalized
+    return LLMService.normalize_participants(participants)
 
 
 class SpeechRequest(BaseModel):
@@ -352,7 +361,22 @@ def submit_decision(
     is_judge = (session.user_role == LegalRole.JUEZ.value)
     user_gender = resolve_speaker_gender("Usuario (Tú)", session.user_role, normalized_participants)
     user_name = "Tú (Magistrado Presidente)" if is_judge else "Usuario (Tú)"
-    user_model_key = "juez1" if is_judge else ("abogada1_mujer" if user_gender == "female" else "abogado1_hombre")
+
+    plaintiff_lawyer_ref = (
+        next((p for p in normalized_participants if p.role == LegalRole.ABOGADO_DEMANDANTE), None)
+        or next((p for p in normalized_participants if p.role == LegalRole.FISCAL), None)
+    )
+    is_defense_role = session.user_role in (LegalRole.ABOGADO_DEMANDADO.value, "abogado_defensor")
+    is_alt_lawyer_user = is_defense_role and bool(
+        plaintiff_lawyer_ref and plaintiff_lawyer_ref.gender == user_gender
+    )
+
+    if is_judge:
+        user_model_key = "juez1"
+    elif user_gender == "female":
+        user_model_key = "abogada2_mujer" if is_alt_lawyer_user else "abogada1_mujer"
+    else:
+        user_model_key = "abogado2_hombre" if is_alt_lawyer_user else "abogado1_hombre"
 
     # Guardar intervención del usuario
     user_intervention = InterventionModel(
@@ -404,11 +428,10 @@ def submit_decision(
         Participant(id="juez_1", name="Juez Presidente del Tribunal", role=LegalRole.JUEZ, description="Magistrado a cargo de la sala", model_3d_key="juez1", gender="male")
     )
 
-    plaintiff_lawyer = next(
-        (p for p in normalized_participants if (
-            p.role in (LegalRole.ABOGADO_DEMANDANTE, LegalRole.FISCAL)
-        )),
-        Participant(
+    plaintiff_lawyer = (
+        next((p for p in normalized_participants if p.role == LegalRole.ABOGADO_DEMANDANTE), None)
+        or next((p for p in normalized_participants if p.role == LegalRole.FISCAL), None)
+        or Participant(
             id="abogado_acusacion",
             name="Letrado de la Acusación",
             role=LegalRole.ABOGADO_DEMANDANTE,
@@ -419,18 +442,20 @@ def submit_decision(
     )
 
     defense_lawyer = next(
-        (p for p in normalized_participants if (
-            p.role in (LegalRole.ABOGADO_DEMANDADO, LegalRole.DEMANDADO) and "abogado" in p.role.value
-        )),
-        Participant(
+        (p for p in normalized_participants if p.role == LegalRole.ABOGADO_DEMANDADO),
+        None
+    )
+    if not defense_lawyer:
+        def_gender = "female"
+        use_alt_def = (plaintiff_lawyer.gender == def_gender)
+        defense_lawyer = Participant(
             id="abogada_defensa",
             name="Letrada de la Defensa",
             role=LegalRole.ABOGADO_DEMANDADO,
             description="Abogada defensora",
-            model_3d_key="abogada1_mujer",
-            gender="female"
+            model_3d_key="abogada2_mujer" if use_alt_def else "abogada1_mujer",
+            gender=def_gender
         )
-    )
 
     is_user_plaintiff_side = ("demandante" in session.user_role or "fiscal" in session.user_role)
     opposing_lawyer = defense_lawyer if is_user_plaintiff_side else plaintiff_lawyer
@@ -445,8 +470,8 @@ def submit_decision(
             name="Parte Demandada" if is_user_plaintiff_side else "Parte Demandante",
             role=LegalRole.DEMANDADO if is_user_plaintiff_side else LegalRole.DEMANDANTE,
             description="Persona que presta testimonio y responde interrogatorio",
-            model_3d_key="abogado1_hombre",
-            gender="male"
+            model_3d_key="per2" if is_user_plaintiff_side else "persona1",
+            gender="female" if is_user_plaintiff_side else "male"
         )
     )
 

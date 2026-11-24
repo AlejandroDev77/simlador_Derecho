@@ -16,6 +16,74 @@ import { simulationService } from './services/simulationService';
 import type { SimulationStateResponse } from './services/simulationService';
 import type { Step, CaseAnalysis, LegalRole, AcademicEvaluation, Intervention, VoiceSettings } from './types';
 
+const FEMALE_TITLE_REGEX = /\b(dona|dna|dra|sra|senora|srta|abogada|letrada|jueza|magistrada|fiscala|defensora|ilma|licda)\b/;
+const MALE_TITLE_REGEX = /\b(don|dr|sr|senor|abogado|letrado|juez|magistrado|defensor|ilmo|licdo)\b/;
+const FEMALE_FIRST_NAMES = new Set([
+  'maria', 'elena', 'lucia', 'carmen', 'laura', 'ana', 'rosa', 'valeria',
+  'sofia', 'patricia', 'claudia', 'teresa', 'monica', 'beatriz', 'silvia',
+  'marta', 'martha', 'cristina', 'andrea', 'paula', 'gabriela', 'daniela',
+  'carolina', 'veronica', 'natalia', 'fernanda', 'alejandra', 'camila',
+  'adriana', 'lorena', 'mariana', 'silvana', 'fabiola', 'roxana', 'ximena',
+  'jimena', 'juana', 'isabel', 'sandra', 'carla', 'karina', 'pamela',
+  'liliana', 'cecilia', 'alicia', 'olga', 'ruth', 'sonia', 'norma',
+  'susana', 'raquel', 'esther', 'noemi', 'gloria', 'maribel', 'gladys',
+  'yaneth', 'janet', 'wendy', 'evelyn', 'brenda', 'jessica', 'vanessa',
+  'nicole', 'estefania', 'lizeth', 'paola', 'diana', 'karen', 'viviana',
+  'tatiana', 'juliana', 'melissa', 'clara', 'elizabeth', 'ines', 'irene',
+  'julia', 'lidia', 'lourdes', 'luisa', 'luz', 'marcela', 'margarita',
+  'marisol', 'mercedes', 'miriam', 'nadia', 'nancy', 'nora', 'pilar',
+  'rebeca', 'rocio', 'romina', 'rosario', 'sara', 'valentina', 'victoria',
+  'virginia', 'yolanda', 'angela', 'angelica', 'barbara', 'blanca',
+  'catalina', 'erika', 'erica', 'fatima', 'helena', 'ingrid', 'jenny',
+  'leticia', 'marlene', 'mayra', 'noelia', 'renata', 'sabrina', 'tania'
+]);
+const MALE_FIRST_NAMES = new Set([
+  'carlos', 'juan', 'jose', 'luis', 'jorge', 'pedro', 'miguel', 'alejandro',
+  'roberto', 'fernando', 'ricardo', 'mario', 'marco', 'marcos', 'antonio',
+  'manuel', 'david', 'daniel', 'diego', 'andres', 'sergio', 'eduardo',
+  'javier', 'raul', 'hugo', 'oscar', 'victor', 'gustavo', 'alberto',
+  'pablo', 'rodrigo', 'adrian', 'gonzalo', 'julio', 'cesar', 'ramiro',
+  'edgar', 'ruben', 'walter', 'freddy', 'grover', 'marcelo', 'mauricio',
+  'ivan', 'franz', 'erick', 'eric', 'christian', 'cristian', 'mateo',
+  'sebastian', 'santiago', 'nicolas', 'tomas', 'martin', 'lucas', 'benjamin',
+  'gabriel', 'samuel', 'rafael', 'esteban', 'felipe', 'francisco', 'hector',
+  'hernan', 'ignacio', 'jaime', 'jesus', 'joaquin', 'jonathan', 'jhonny',
+  'kevin', 'leonardo', 'lorenzo', 'matias', 'maximiliano', 'nelson', 'nestor',
+  'omar', 'orlando', 'patricio', 'rene', 'rodolfo', 'rolando', 'roman',
+  'salvador', 'saul', 'simon', 'vicente', 'wilson', 'william', 'henry',
+  'alfonso', 'alfredo', 'alonso', 'alvaro', 'angel', 'armando', 'arturo',
+  'boris', 'bruno', 'camilo', 'claudio', 'dario', 'edwin', 'emilio',
+  'enrique', 'ernesto', 'fabian', 'federico', 'felix', 'german', 'gerardo',
+  'guillermo', 'horacio', 'humberto', 'ismael', 'israel', 'joel', 'julian',
+  'leandro', 'moises', 'octavio', 'osvaldo', 'ramon', 'reynaldo', 'richard',
+  'rogelio', 'ronald', 'vladimir', 'yamil'
+]);
+const SKIP_NAME_PREFIXES = new Set([
+  'lic', 'licda', 'licdo', 'ing', 'arq', 'abg', 'abog', 'ilmo', 'ilma',
+  'mag', 'prof', 'de', 'del', 'la', 'el', 'los', 'las', 'san', 'santa',
+  'tu', 'usuario', 'parte', 'demandante', 'demandado', 'acusado', 'acusada', 'fiscal'
+]);
+
+function inferSpeakerGender(
+  speakerName: string = '',
+  _speakerRole: string = '',
+  explicitGender?: string
+): 'male' | 'female' {
+  if (explicitGender === 'female' || explicitGender === 'male') return explicitGender;
+  const cleanName = speakerName.replace(/\(.*?\)/g, ' ').trim();
+  const norm = cleanName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (/\b(jose maria|jesus maria)\b/.test(norm)) return 'male';
+  if (/\b(maria jose|maria jesus)\b/.test(norm)) return 'female';
+  if (FEMALE_TITLE_REGEX.test(norm)) return 'female';
+  if (MALE_TITLE_REGEX.test(norm)) return 'male';
+  const tokens = (norm.match(/[a-z]+/g) || []).filter((t) => !SKIP_NAME_PREFIXES.has(t) && t.length > 1);
+  for (const tok of tokens.slice(0, 2)) {
+    if (FEMALE_FIRST_NAMES.has(tok)) return 'female';
+    if (MALE_FIRST_NAMES.has(tok)) return 'male';
+  }
+  return 'male';
+}
+
 function resolveSpeakerVoice(
   speakerRole: string,
   speakerName: string = '',
@@ -235,7 +303,12 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
     }
 
     const masterVolume = Math.max(0, Math.min(1, voiceSettings.volume ?? 1.0));
-    const speakerIsFemale = currentIntervention.speaker_gender === 'female';
+    const effectiveGender = inferSpeakerGender(
+      currentIntervention.speaker_name,
+      currentIntervention.speaker_role,
+      currentIntervention.speaker_gender
+    );
+    const speakerIsFemale = effectiveGender === 'female';
 
     const speakWithBrowserFallback = () => {
       if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
@@ -303,7 +376,7 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
       const voice = resolveSpeakerVoice(
         currentIntervention.speaker_role,
         currentIntervention.speaker_name,
-        currentIntervention.speaker_gender || 'male',
+        effectiveGender,
         voiceSettings
       );
 
@@ -480,11 +553,19 @@ PRETENSIONES Y PETITORIO DE LAS PARTES:
         ? 'Parte Demandante'
         : 'Parte Demandada';
 
+      const isDefenseRole = userRole === 'abogado_defensor' || userRole === 'abogado_demandado';
+      const plaintiffLawyerParticipant = (simState?.participants || []).find(
+        (p) => p.role === 'abogado_demandante' || p.role === 'fiscal'
+      );
+      const isAltLawyer = Boolean(
+        isDefenseRole && plaintiffLawyerParticipant && (plaintiffLawyerParticipant.gender === userGender)
+      );
+
       const userModelKey = isJudge
         ? 'juez1'
         : userGender === 'female'
-        ? 'abogada1_mujer'
-        : 'abogado1_hombre';
+        ? (isAltLawyer ? 'abogada2_mujer' : 'abogada1_mujer')
+        : (isAltLawyer ? 'abogado2_hombre' : 'abogado1_hombre');
 
       const userIntervention: Intervention = {
         id: res.user_intervention?.id || `user_inv_${Date.now()}`,

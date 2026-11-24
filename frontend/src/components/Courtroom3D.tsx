@@ -869,26 +869,134 @@ export const Courtroom3D: React.FC<Courtroom3DProps> = ({
           });
         };
 
-        // Detección dinámica de género y asignación de modelos 3D (abogado1_hombre / abogada1_mujer):
+        // Detección dinámica de género y asignación de modelos 3D:
+        // - Abogados: abogado1_hombre.glb / abogada1_mujer.glb (primarios)
+        //   Si ambos abogados son del mismo género: la defensa usa el modelo alternativo: abogado2_hombre.glb / abogada2_mujer.glb
+        // - Demandante y Demandado: persona1.glb (hombre) / per2.glb (mujer)
+        //   Si ambos son del mismo género: el demandado usa el modelo alternativo (viejoverde.glb hombre / doña1.glb mujer)
+        const stripAccents = (s: string) =>
+          s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+        const skipPrefixes = new Set([
+          'lic', 'licda', 'licdo', 'ing', 'arq', 'abg', 'abog', 'ilmo', 'ilma',
+          'mag', 'prof', 'de', 'del', 'la', 'el', 'los', 'las', 'san', 'santa',
+          'parte', 'demandante', 'demandado', 'acusado', 'acusada', 'actor', 'actora', 'fiscal'
+        ]);
+        const femaleFirstNames = new Set([
+          'maria', 'elena', 'lucia', 'carmen', 'laura', 'ana', 'rosa', 'valeria',
+          'sofia', 'patricia', 'claudia', 'teresa', 'monica', 'beatriz', 'silvia',
+          'marta', 'martha', 'cristina', 'andrea', 'paula', 'gabriela', 'daniela',
+          'carolina', 'veronica', 'natalia', 'fernanda', 'alejandra', 'camila',
+          'adriana', 'lorena', 'mariana', 'silvana', 'fabiola', 'roxana', 'ximena',
+          'jimena', 'juana', 'isabel', 'sandra', 'carla', 'karina', 'pamela',
+          'liliana', 'cecilia', 'alicia', 'olga', 'ruth', 'sonia', 'norma',
+          'susana', 'raquel', 'esther', 'noemi', 'gloria', 'maribel', 'gladys',
+          'yaneth', 'janet', 'wendy', 'evelyn', 'brenda', 'jessica', 'vanessa',
+          'nicole', 'estefania', 'lizeth', 'paola', 'diana', 'karen', 'viviana',
+          'tatiana', 'juliana', 'melissa', 'clara', 'elizabeth', 'ines', 'irene',
+          'julia', 'lidia', 'lourdes', 'luisa', 'luz', 'marcela', 'margarita',
+          'marisol', 'mercedes', 'miriam', 'nadia', 'nancy', 'nora', 'pilar',
+          'rebeca', 'rocio', 'romina', 'rosario', 'sara', 'valentina', 'victoria',
+          'virginia', 'yolanda', 'angela', 'angelica', 'barbara', 'blanca',
+          'catalina', 'erika', 'erica', 'fatima', 'helena', 'ingrid', 'jenny',
+          'leticia', 'marlene', 'mayra', 'noelia', 'renata', 'sabrina', 'tania'
+        ]);
+        const maleFirstNames = new Set([
+          'carlos', 'juan', 'jose', 'luis', 'jorge', 'pedro', 'miguel', 'alejandro',
+          'roberto', 'fernando', 'ricardo', 'mario', 'marco', 'marcos', 'antonio',
+          'manuel', 'david', 'daniel', 'diego', 'andres', 'sergio', 'eduardo',
+          'javier', 'raul', 'hugo', 'oscar', 'victor', 'gustavo', 'alberto',
+          'pablo', 'rodrigo', 'adrian', 'gonzalo', 'julio', 'cesar', 'ramiro',
+          'edgar', 'ruben', 'walter', 'freddy', 'grover', 'marcelo', 'mauricio',
+          'ivan', 'franz', 'erick', 'eric', 'christian', 'cristian', 'mateo',
+          'sebastian', 'santiago', 'nicolas', 'tomas', 'martin', 'lucas', 'benjamin',
+          'gabriel', 'samuel', 'rafael', 'esteban', 'felipe', 'francisco', 'hector',
+          'hernan', 'ignacio', 'jaime', 'jesus', 'joaquin', 'jonathan', 'jhonny',
+          'kevin', 'leonardo', 'lorenzo', 'matias', 'maximiliano', 'nelson', 'nestor',
+          'omar', 'orlando', 'patricio', 'rene', 'rodolfo', 'rolando', 'roman',
+          'salvador', 'saul', 'simon', 'vicente', 'wilson', 'william', 'henry',
+          'alfonso', 'alfredo', 'alonso', 'alvaro', 'angel', 'armando', 'arturo',
+          'boris', 'bruno', 'camilo', 'claudio', 'dario', 'edwin', 'emilio',
+          'enrique', 'ernesto', 'fabian', 'federico', 'felix', 'german', 'gerardo',
+          'guillermo', 'horacio', 'humberto', 'ismael', 'israel', 'joel', 'julian',
+          'leandro', 'moises', 'octavio', 'osvaldo', 'ramon', 'reynaldo', 'richard',
+          'rogelio', 'ronald', 'vladimir', 'yamil'
+        ]);
+
         const inferGenderFromParticipant = (p?: Participant, fallback: 'male' | 'female' = 'male'): 'male' | 'female' => {
-          if (p?.gender === 'female' || p?.gender === 'male') return p.gender;
-          const txt = `${p?.name || ''} ${p?.description || ''}`.toLowerCase();
-          if (/\b(doña|dña|dra|sra|señora|abogada|jueza|defensora|mar[ií]a|elena|luc[ií]a|carmen|laura|ana|rosa|valeria|sof[ií]a|patricia|claudia|andrea|paula|gabriela|daniela|carolina|ver[oó]nica|natalia|fernanda|alejandra|camila|adriana|lorena|mariana|isabel|sandra|carla|roxana|ximena|jimena)\b/i.test(txt)) {
-            return 'female';
+          const cleanName = (p?.name || '').replace(/\(.*?\)/g, ' ').trim();
+          const normName = stripAccents(cleanName);
+
+          if (normName) {
+            if (/\b(jose maria|jesus maria)\b/.test(normName)) return 'male';
+            if (/\b(maria jose|maria jesus)\b/.test(normName)) return 'female';
+            if (/\b(dona|dna|dra|sra|senora|srta|abogada|letrada|jueza|magistrada|fiscala|defensora|ilma|licda)\b/.test(normName)) {
+              return 'female';
+            }
+            if (/\b(don|dr|sr|senor|abogado|letrado|juez|magistrado|defensor|ilmo|licdo)\b/.test(normName)) {
+              return 'male';
+            }
+            const tokens = (normName.match(/[a-z]+/g) || []).filter((t) => !skipPrefixes.has(t) && t.length > 1);
+            for (const tok of tokens.slice(0, 2)) {
+              if (femaleFirstNames.has(tok)) return 'female';
+              if (maleFirstNames.has(tok)) return 'male';
+            }
           }
+
+          if (p?.gender === 'female' || p?.gender === 'male') return p.gender;
           return fallback;
         };
 
-        const resolveModelByRoles = (roles: string[], fallbackGender: 'male' | 'female') => {
-          const found = (participants || []).find((p) => roles.includes(p.role));
-          const detectedGender = inferGenderFromParticipant(found, fallbackGender);
-          return detectedGender === 'female' ? '/models/abogada1_mujer.glb' : '/models/abogado1_hombre.glb';
+        // Buscar respetando prioridad estricta de roles (ej. abogado_demandante antes que fiscal)
+        const findByRolePriority = (roles: string[]): Participant | undefined => {
+          for (const role of roles) {
+            const match = (participants || []).find((p) => p.role === role);
+            if (match) return match;
+          }
+          return undefined;
         };
 
-        const lawyerPlaintiffModel = resolveModelByRoles(['abogado_demandante', 'fiscal'], 'male');
-        const plaintiffModel = resolveModelByRoles(['demandante'], 'male');
-        const lawyerDefendantModel = resolveModelByRoles(['abogado_demandado', 'abogado_defensor'], 'female');
-        const defendantModel = resolveModelByRoles(['demandado'], 'male');
+        const lawyerPlaintiffParticipant = findByRolePriority(['abogado_demandante', 'fiscal']);
+        const lawyerDefendantParticipant = findByRolePriority(['abogado_demandado', 'abogado_defensor']);
+        const plaintiffParticipant = findByRolePriority(['demandante']);
+        const defendantParticipant = findByRolePriority(['demandado']);
+
+        const lawyerPlaintiffGender = inferGenderFromParticipant(lawyerPlaintiffParticipant, 'male');
+        const lawyerDefendantGender = inferGenderFromParticipant(lawyerDefendantParticipant, 'female');
+        const plaintiffGender = inferGenderFromParticipant(plaintiffParticipant, 'male');
+        const defendantGender = inferGenderFromParticipant(defendantParticipant, 'female');
+
+        let lawyerPlaintiffModel =
+          lawyerPlaintiffGender === 'female' ? '/models/abogada1_mujer.glb' : '/models/abogado1_hombre.glb';
+        if (lawyerPlaintiffParticipant?.model_3d_key === 'abogado2_hombre') {
+          lawyerPlaintiffModel = '/models/abogado2_hombre.glb';
+        } else if (lawyerPlaintiffParticipant?.model_3d_key === 'abogada2_mujer') {
+          lawyerPlaintiffModel = '/models/abogada2_mujer.glb';
+        }
+
+        let lawyerDefendantModel =
+          lawyerDefendantGender === 'female' ? '/models/abogada1_mujer.glb' : '/models/abogado1_hombre.glb';
+
+        // Si ambos abogados comparten género, el abogado de la defensa utiliza el modelo alternativo
+        if (lawyerPlaintiffGender === lawyerDefendantGender) {
+          lawyerDefendantModel =
+            lawyerDefendantGender === 'female' ? '/models/abogada2_mujer.glb' : '/models/abogado2_hombre.glb';
+        } else if (lawyerDefendantParticipant?.model_3d_key === 'abogado2_hombre') {
+          lawyerDefendantModel = '/models/abogado2_hombre.glb';
+        } else if (lawyerDefendantParticipant?.model_3d_key === 'abogada2_mujer') {
+          lawyerDefendantModel = '/models/abogada2_mujer.glb';
+        }
+
+        // Demandante y Demandado: persona1 (hombre) y per2 (mujer); alternativos viejoverde (hombre) y doña1 (mujer) si comparten género
+        let plaintiffModel = plaintiffGender === 'female' ? '/models/per2.glb' : '/models/persona1.glb';
+        let defendantModel = defendantGender === 'female' ? '/models/per2.glb' : '/models/persona1.glb';
+        if (plaintiffGender === 'male' && defendantGender === 'male') {
+          plaintiffModel = '/models/persona1.glb';
+          defendantModel = '/models/viejoverde.glb';
+        } else if (plaintiffGender === 'female' && defendantGender === 'female') {
+          plaintiffModel = '/models/per2.glb';
+          defendantModel = encodeURI('/models/doña1.glb');
+        }
 
         // Carga simultánea de los 5 personajes según género detectado en el expediente:
         Promise.all([

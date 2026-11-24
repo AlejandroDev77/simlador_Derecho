@@ -1,5 +1,6 @@
 import json
 import re
+import unicodedata
 import uuid
 from typing import List, Dict, Any, Tuple, Optional
 from openai import OpenAI
@@ -16,75 +17,191 @@ class LLMService:
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
         self.model = settings.OPENAI_MODEL
 
+    _SKIP_PREFIXES = {
+        "lic", "licda", "licdo", "ing", "arq", "abg", "abog", "ilmo", "ilma",
+        "mag", "prof", "mba", "msc", "phd", "de", "del", "la", "el", "los",
+        "las", "san", "santa", "parte", "demandante", "demandado", "acusado",
+        "acusada", "actor", "actora", "testigo", "perito", "fiscal", "ministerio"
+    }
+
+    _FEMALE_FIRST_NAMES = {
+        "maria", "elena", "lucia", "carmen", "laura", "ana", "rosa", "valeria",
+        "sofia", "patricia", "claudia", "teresa", "monica", "beatriz", "silvia",
+        "marta", "martha", "cristina", "andrea", "paula", "gabriela", "daniela",
+        "carolina", "veronica", "natalia", "fernanda", "alejandra", "camila",
+        "adriana", "lorena", "mariana", "silvana", "fabiola", "roxana", "ximena",
+        "jimena", "juana", "isabel", "sandra", "carla", "karina", "pamela",
+        "liliana", "cecilia", "alicia", "olga", "ruth", "sonia", "norma",
+        "susana", "raquel", "esther", "noemi", "gloria", "maribel", "gladys",
+        "yaneth", "janet", "wendy", "evelyn", "brenda", "jessica", "vanessa",
+        "nicole", "estefania", "lizeth", "jhovanna", "giovanna", "yovana",
+        "paola", "diana", "katherine", "catherine", "karen", "viviana",
+        "tatiana", "juliana", "melissa", "michelle", "stephanie", "stephany",
+        "abigail", "belen", "celeste", "clara", "constanza", "elizabeth",
+        "elisabeth", "emilia", "esmeralda", "eva", "florencia", "francisca",
+        "graciela", "guadalupe", "ines", "irene", "irma", "ivonne", "jacqueline",
+        "jazmin", "jennifer", "johana", "johanna", "josefina", "julia", "leyla",
+        "lidia", "lourdes", "luisa", "luz", "magdalena", "marcela", "margarita",
+        "marisol", "mercedes", "milagros", "miriam", "mirian", "nadia", "nancy",
+        "nora", "ofelia", "pilar", "rebeca", "regina", "rocio", "romina",
+        "rosario", "salome", "sara", "sarah", "selena", "sol", "tamara",
+        "valentina", "victoria", "virginia", "yasmin", "yesenia", "yolanda",
+        "zulema", "nayra", "kattia", "katia", "cintia", "cynthia", "marina",
+        "angela", "angelica", "araceli", "astrid", "barbara", "bertha", "blanca",
+        "catalina", "consuelo", "eliana", "elsa", "erika", "erica", "eugenia",
+        "fatima", "fiorella", "gema", "gisela", "gisselle", "helena", "hilda",
+        "ingrid", "jenny", "joana", "judith", "kelly", "laia", "leticia",
+        "lilian", "lina", "lissette", "livia", "lucero", "maite", "manuela",
+        "marlene", "mayra", "melanie", "milena", "mireya", "nataly", "nathalie",
+        "nelida", "noelia", "nuria", "patty", "priscila", "renata", "rita",
+        "rosalia", "sabrina", "sheila", "sofia", "stefania", "tania", "vanesa",
+        "vilma", "wendy", "yessica", "zulma"
+    }
+
+    _MALE_FIRST_NAMES = {
+        "carlos", "juan", "jose", "luis", "jorge", "pedro", "miguel", "alejandro",
+        "roberto", "fernando", "ricardo", "mario", "marco", "marcos", "antonio",
+        "manuel", "david", "daniel", "diego", "andres", "sergio", "eduardo",
+        "javier", "raul", "hugo", "oscar", "victor", "gustavo", "alberto",
+        "pablo", "rodrigo", "adrian", "gonzalo", "julio", "cesar", "ramiro",
+        "edgar", "ruben", "walter", "freddy", "grover", "marcelo", "mauricio",
+        "ivan", "franz", "erick", "eric", "christian", "cristian", "mateo",
+        "sebastian", "santiago", "nicolas", "tomas", "martin", "lucas", "benjamin",
+        "gabriel", "samuel", "rafael", "esteban", "felipe", "francisco", "hector",
+        "hernan", "ignacio", "jaime", "jesus", "joaquin", "jonathan", "jhonatan",
+        "jhonny", "johnny", "kevin", "leonardo", "lorenzo", "mariano", "matias",
+        "maximiliano", "nelson", "nestor", "omar", "orlando", "patricio",
+        "renato", "rene", "rodolfo", "rolando", "roman", "salvador", "saul",
+        "simon", "vicente", "wilson", "william", "willy", "wilfredo", "henry",
+        "hebert", "herbert", "aldo", "alfonso", "alfredo", "alonso", "alvaro",
+        "angel", "armando", "arturo", "augusto", "axel", "boris", "brayan",
+        "bryan", "bruno", "camilo", "claudio", "dario", "dennis", "edson",
+        "edwin", "efrain", "elias", "emilio", "enrique", "ernesto", "eugenio",
+        "fabian", "fabricio", "federico", "felix", "fidel", "flavio", "franklin",
+        "german", "gerardo", "gilberto", "guido", "guillermo", "harold", "horacio",
+        "humberto", "ismael", "israel", "jairo", "jesus", "joel", "josue",
+        "julian", "julio", "leandro", "lenin", "luciano", "manuel", "marcial",
+        "maximo", "moises", "nahuel", "octavio", "osvaldo", "otto", "paolo",
+        "pascual", "paul", "percy", "rafael", "ramon", "reyna", "reynaldo",
+        "richard", "rogelio", "ronald", "roque", "ruben", "salomon", "santos",
+        "teodoro", "ulises", "valentin", "vladimir", "wilmer", "yamil", "yerko"
+    }
+
     @staticmethod
-    def _infer_gender(name: str, role_val: str = "", description: str = "", llm_gender: Optional[str] = None) -> str:
-        """
-        Determina con precisión el género ('male' o 'female') a partir de títulos, nombres y metadatos del expediente.
-        """
-        text_name = (name or "").lower()
-        combined = f"{name} {role_val} {description}".lower()
+    def _strip_accents(text: str) -> str:
+        nfkd = unicodedata.normalize("NFD", text or "")
+        return "".join(ch for ch in nfkd if unicodedata.category(ch) != "Mn")
 
-        explicit_female_titles = [
-            r'\bdoña\b', r'\bdña\b', r'\bdra\b', r'\bsra\b', r'\bseñora\b', r'\bsenora\b',
-            r'\babogada\b', r'\bjueza\b', r'\bmagistrada\b', r'\bfiscala\b', r'\bdefensora\b',
-            r'\bacusadora\b', r'\bdemandada\b', r'\btestiga\b', r'\bperita\b'
-        ]
-        explicit_male_titles = [
-            r'\bdon\b', r'\bdr\b', r'\bsr\b', r'\bseñor\b', r'\bsenior\b', r'\bletrado\b',
-            r'\babogado\b', r'\bmagistrado\b', r'\bdefensor\b', r'\bacusado\b'
-        ]
+    @classmethod
+    def _infer_gender(cls, name: str, role_val: str = "", description: str = "", llm_gender: Optional[str] = None) -> str:
+        """
+        Determina con precisión el género ('male' o 'female') priorizando:
+        1) Títulos personales explícitos en el nombre (Dra./Doña/Abogada vs Dr./Don/Abogado).
+        2) Primer y segundo nombre (sin contaminar por apellidos ni por la descripción del cliente/contraparte).
+        3) El género detectado por el LLM para nombres poco comunes.
+        """
+        raw_name = (name or "").strip()
+        # Quitar paréntesis tipo "(Abogado de la parte demandada)" para no contaminar el nombre
+        clean_name = re.sub(r'\(.*?\)', ' ', raw_name).strip()
+        norm_name = cls._strip_accents(clean_name).lower()
 
-        for pat in explicit_female_titles:
-            if re.search(pat, text_name):
+        # 1. Nombres compuestos clásicos con género definido
+        if re.search(r'\b(jose maria|jesus maria)\b', norm_name):
+            return "male"
+        if re.search(r'\b(maria jose|maria jesus)\b', norm_name):
+            return "female"
+
+        # 2. Títulos personales explícitos estrictamente en el nombre
+        if re.search(r'\b(dona|dna|dra|sra|senora|srta|senorita|abogada|letrada|jueza|magistrada|fiscala|defensora|ilma|licda)\b', norm_name):
+            return "female"
+        if re.search(r'\b(don|dr|sr|senor|abogado|letrado|juez|magistrado|defensor|ilmo|licdo)\b', norm_name):
+            return "male"
+
+        # 3. Evaluar los primeros 1-2 nombres de pila (izquierda a derecha) evitando apellidos como 'Santa María' o 'Rosa'
+        tokens = [t for t in re.findall(r'[a-z]+', norm_name) if t not in cls._SKIP_PREFIXES and len(t) > 1]
+        for tok in tokens[:2]:
+            if tok in cls._FEMALE_FIRST_NAMES:
                 return "female"
-        for pat in explicit_male_titles:
-            if re.search(pat, text_name):
+            if tok in cls._MALE_FIRST_NAMES:
                 return "male"
 
-        female_names = [
-            r'\bmar[ií]a\b', r'\belena\b', r'\bluc[ií]a\b', r'\bcarmen\b', r'\blaura\b', r'\bana\b',
-            r'\brosa\b', r'\bvaleria\b', r'\bsof[ií]a\b', r'\bpatricia\b', r'\bclaudia\b', r'\bteresa\b',
-            r'\bm[oó]nica\b', r'\bbeatriz\b', r'\bsilvia\b', r'\bmarta\b', r'\bmartha\b', r'\bcristina\b',
-            r'\bandrea\b', r'\bpaula\b', r'\bgabriela\b', r'\bdaniela\b', r'\bcarolina\b', r'\bver[oó]nica\b',
-            r'\bnatalia\b', r'\bfernanda\b', r'\balejandra\b', r'\bcamila\b', r'\badriana\b', r'\blorena\b',
-            r'\bmariana\b', r'\bsilvana\b', r'\bfabiola\b', r'\broxana\b', r'\bximena\b', r'\bjimena\b',
-            r'\bjuana\b', r'\bisabel\b', r'\bsandra\b', r'\bcarla\b', r'\bkarina\b', r'\bpamela\b',
-            r'\bliliana\b', r'\bcecilia\b', r'\balicia\b', r'\bolga\b', r'\bruth\b', r'\bsonia\b',
-            r'\bnorma\b', r'\bsusana\b', r'\braquel\b', r'\besther\b', r'\bnoem[ií]\b', r'\bgloria\b',
-            r'\bmaribel\b', r'\bgladys\b', r'\byaneth\b', r'\bjanet\b', r'\bwendy\b', r'\bevelyn\b',
-            r'\bbrenda\b', r'\bjessica\b', r'\bvanessa\b', r'\bnicole\b', r'\bestefan[ií]a\b', r'\blizeth\b'
-        ]
-        male_names = [
-            r'\bcarlos\b', r'\bjuan\b', r'\bjos[eé]\b', r'\bluis\b', r'\bjorge\b', r'\bpedro\b',
-            r'\bmiguel\b', r'\balejandro\b', r'\broberto\b', r'\bfernando\b', r'\bricardo\b', r'\bmario\b',
-            r'\bmarco\b', r'\bmarcos\b', r'\bantonio\b', r'\bmanuel\b', r'\bdavid\b', r'\bdaniel\b',
-            r'\bdiego\b', r'\bandr[eé]s\b', r'\bsergio\b', r'\beduardo\b', r'\bjavier\b', r'\bra[uú]l\b',
-            r'\bhugo\b', r'\b[oó]scar\b', r'\bv[ií]ctor\b', r'\bgustavo\b', r'\balberto\b', r'\bpablo\b',
-            r'\brodrigo\b', r'\badri[aá]n\b', r'\bgonzalo\b', r'\bjulio\b', r'\bc[eé]sar\b', r'\bramiro\b',
-            r'\bedgar\b', r'\brub[eé]n\b', r'\bwalter\b', r'\bfreddy\b', r'\bgrover\b', r'\bmarcelo\b',
-            r'\bmauricio\b', r'\biv[aá]n\b', r'\bfranz\b', r'\berick\b', r'\bchristian\b', r'\bcristian\b'
-        ]
-
-        for pat in female_names:
-            if re.search(pat, text_name):
-                return "female"
-        for pat in male_names:
-            if re.search(pat, text_name):
-                return "male"
-
-        for pat in explicit_female_titles:
-            if re.search(pat, combined):
-                return "female"
-
+        # 4. Confiar en el género inferido por el LLM si es válido (cubre nombres extranjeros o indígenas poco frecuentes)
         if llm_gender in ("male", "female"):
             return llm_gender
+
+        # 5. Último recurso: solo encabezado directo de la descripción (nunca 'parte demandada' en medio de una frase)
+        norm_desc = cls._strip_accents(description or "").lower().strip()
+        if re.match(r'^(la\s+)?(abogada|letrada|jueza|magistrada|fiscala|defensora|senora|dona)\b', norm_desc):
+            return "female"
+        if re.match(r'^(el\s+)?(abogado|letrado|juez|magistrado|defensor|senor|don)\b', norm_desc):
+            return "male"
+
         return "male"
 
     @staticmethod
-    def _model_for_role_and_gender(role: LegalRole, gender: str) -> str:
-        if role == LegalRole.JUEZ:
+    def _model_for_role_and_gender(
+        role: LegalRole,
+        gender: str,
+        use_alt_party: bool = False,
+        use_alt_lawyer: bool = False
+    ) -> str:
+        r_val = role.value if hasattr(role, 'value') else str(role)
+        if r_val == LegalRole.JUEZ.value:
             return "juez1"
-        return "abogada1_mujer" if gender == "female" else "abogado1_hombre"
+        if r_val in (LegalRole.ABOGADO_DEMANDANTE.value, LegalRole.ABOGADO_DEMANDADO.value, LegalRole.FISCAL.value):
+            if gender == "female":
+                return "abogada2_mujer" if use_alt_lawyer else "abogada1_mujer"
+            return "abogado2_hombre" if use_alt_lawyer else "abogado1_hombre"
+        # Partes materiales (demandante / demandado / testigos):
+        # Hombre principal: persona1 | Hombre alternativo: viejoverde
+        # Mujer principal: per2      | Mujer alternativa: doña1
+        if gender == "female":
+            return "doña1" if use_alt_party else "per2"
+        return "viejoverde" if use_alt_party else "persona1"
+
+    @classmethod
+    def normalize_participants(cls, participants: List[Participant]) -> List[Participant]:
+        """
+        Normaliza género y modelo 3D de todos los participantes del expediente:
+        - Abogados: abogado1_hombre / abogada1_mujer según género detectado. Si ambos abogados
+          comparten género, el abogado defensor/demandado utiliza el modelo alternativo (abogado2_hombre o abogada2_mujer).
+        - Demandante y Demandado: persona1 (hombre) y per2 (mujer); si ambos comparten género,
+          el demandado utiliza el modelo alternativo (viejoverde para hombre, doña1 para mujer).
+        """
+        inferred: List[Tuple[Participant, str]] = [
+            (p, cls._infer_gender(p.name, p.role.value if hasattr(p.role, 'value') else str(p.role), p.description, p.gender))
+            for p in participants
+        ]
+
+        def _is_role(role_val, target: LegalRole) -> bool:
+            if hasattr(role_val, 'value'):
+                return role_val.value == target.value
+            return str(role_val) == target.value
+
+        demandante_gender = next(
+            (g for p, g in inferred if _is_role(p.role, LegalRole.DEMANDANTE)),
+            None
+        )
+        lawyer_demandante_gender = next(
+            (g for p, g in inferred if _is_role(p.role, LegalRole.ABOGADO_DEMANDANTE) or _is_role(p.role, LegalRole.FISCAL)),
+            None
+        )
+
+        normalized: List[Participant] = []
+        for p, g in inferred:
+            use_alt_party = (
+                _is_role(p.role, LegalRole.DEMANDADO)
+                and demandante_gender is not None
+                and demandante_gender == g
+            )
+            use_alt_lawyer = (
+                _is_role(p.role, LegalRole.ABOGADO_DEMANDADO)
+                and lawyer_demandante_gender is not None
+                and lawyer_demandante_gender == g
+            )
+            m = cls._model_for_role_and_gender(p.role, g, use_alt_party=use_alt_party, use_alt_lawyer=use_alt_lawyer)
+            normalized.append(p.model_copy(update={"gender": g, "model_3d_key": m}))
+        return normalized
 
     def analyze_case(self, document_text: str) -> CaseAnalysis:
         """
@@ -102,8 +219,8 @@ class LLMService:
             "2. Distingue estrictamente entre hechos probados/documentados y alegaciones de parte.\n"
             "3. Si un dato se desconoce (como el nombre del juez o número de causa), indícalo como 'No determinado' o 'Desconocido'.\n"
             "4. Asigna a cada participante uno de estos roles estándar: 'juez', 'fiscal', 'demandante', 'abogado_demandante', 'demandado', 'abogado_demandado', 'testigo', 'perito'.\n"
-            "5. Detecta obligatoriamente el género real o gramatical ('male' o 'female') de TODOS los participantes (especialmente abogados y demandantes/demandados) según sus nombres, títulos (Don/Doña, Dr./Dra., Sr./Sra., Abogado/Abogada) y contexto del expediente.\n"
-            "6. Asigna 'model_3d_key' estrictamente según rol y género: 'juez1' para juez; 'abogada1_mujer' si es mujer o 'abogado1_hombre' si es hombre para abogados y partes.\n"
+            "5. Detecta obligatoriamente el género real o gramatical ('male' o 'female') de TODOS los participantes según su propio nombre y tratamiento (Don/Doña, Dr./Dra., Sr./Sra., Abogado/Abogada).\n"
+            "6. Asigna 'model_3d_key' según rol y género: 'juez1' para juez; 'abogada1_mujer' o 'abogado1_hombre' para abogados (usando 'abogada2_mujer' o 'abogado2_hombre' si ambos abogados comparten género); 'persona1' (hombre) o 'per2' (mujer) para demandante y demandado (usando 'viejoverde' o 'doña1' si ambos comparten género).\n"
             "7. Devuelve un JSON estrictamente conforme al esquema solicitado."
         )
 
@@ -162,7 +279,7 @@ class LLMService:
                                     "name": {"type": "string"},
                                     "role": {"type": "string", "enum": ["juez", "fiscal", "demandante", "abogado_demandante", "demandado", "abogado_demandado", "testigo", "perito"]},
                                     "description": {"type": "string"},
-                                    "model_3d_key": {"type": "string", "enum": ["juez1", "abogado1_hombre", "abogada1_mujer", "persona1", "per2"]},
+                                    "model_3d_key": {"type": "string", "enum": ["juez1", "abogado1_hombre", "abogada1_mujer", "abogado2_hombre", "abogada2_mujer", "persona1", "per2", "viejoverde", "doña1"]},
                                     "gender": {"type": "string", "enum": ["male", "female"], "description": "Género obligatorio (male/female) del abogado, demandante, demandado o juez según su nombre o tratamiento"}
                                 },
                                 "required": ["id", "name", "role", "description", "model_3d_key", "gender"]
@@ -210,24 +327,18 @@ class LLMService:
             ) for i, e in enumerate(data.get("evidences", []))
         ]
 
-        participants_list = []
-        for i, p in enumerate(data.get("participants", [])):
-            role_enum = LegalRole(p.get("role", "demandante"))
-            inferred_gender = self._infer_gender(
-                p.get("name", ""),
-                role_enum.value,
-                p.get("description", ""),
-                p.get("gender")
-            )
-            participants_list.append(Participant(
+        raw_participants = [
+            Participant(
                 id=p.get("id", f"part_{i}"),
                 name=p.get("name", "Participante"),
-                role=role_enum,
+                role=LegalRole(p.get("role", "demandante")),
                 description=p.get("description", ""),
                 is_fictional=False,
-                model_3d_key=self._model_for_role_and_gender(role_enum, inferred_gender),
-                gender=inferred_gender
-            ))
+                model_3d_key=p.get("model_3d_key", "persona1"),
+                gender=p.get("gender", "male")
+            ) for i, p in enumerate(data.get("participants", []))
+        ]
+        participants_list = self.normalize_participants(raw_participants)
 
         # Asegurar que al menos haya un Juez asignado
         has_juez = any(p.role == LegalRole.JUEZ for p in participants_list)

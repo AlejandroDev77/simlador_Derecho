@@ -228,7 +228,7 @@ export const CourtroomStep: React.FC<CourtroomStepProps> = ({
           {/* Canvas Three.js con marco institucional */}
           <div className="flex-1 w-full h-full relative overflow-hidden rounded-2xl border border-slate-200 shadow-md bg-white">
             <Courtroom3D
-              key={simState.session_id}
+              key={`${simState.session_id}-${(simState.participants || []).map((p) => `${p.role}:${p.gender || ''}`).join('|')}`}
               currentSpeakerRole={currentIntervention?.speaker_role}
               userRole={simState.user_role}
               activeSpeakerName={currentIntervention?.speaker_name}
